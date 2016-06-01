@@ -252,6 +252,14 @@ SECTION_PROLOGUE (_k_task_list, (OPTIONAL),)
 		KEEP(*(SORT_BY_NAME(".net_if*")))
 		__net_if_end = .;
 	} GROUP_LINK_IN(RAMABLE_REGION)
+
+	SECTION_PROLOGUE(net_nbr, (OPTIONAL),)
+	{
+		__net_nbr_start = .;
+		*(".net_nbr.*")
+		KEEP(*(SORT_BY_NAME(".net_nbr*")))
+		__net_nbr_end = .;
+	} GROUP_LINK_IN(RAMABLE_REGION)
 #endif
 
 	SECTION_PROLOGUE(_NOINIT_SECTION_NAME,(NOLOAD),) {
