@@ -19,7 +19,7 @@
 
 #include <soc.h>
 
-#if defined(CONFIG_NETWORKING_WITH_15_4_TI_CC2520)
+#if defined(CONFIG_TI_CC2520_LEGACY) || defined(CONFIG_TI_CC2520)
 
 /* GPIO numbers where the TI cc2520 chip is connected to */
 #define CONFIG_CC2520_GPIO_VREG_EN	0  /* PIN ?, ATP_AON_INT0 (out) */
@@ -44,7 +44,7 @@ enum cc2520_gpio_index {
 	CC2520_GPIO_IDX_LAST_ENTRY
 };
 
-#endif /* CONFIG_NETWORKING_WITH_15_4_TI_CC2520 */
+#endif /* CONFIG_TI_CC2520_LEGACY || CONFIG_TI_CC2520 */
 
 #if defined(CONFIG_USB)
 /* GPIO driver name */
