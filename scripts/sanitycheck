@@ -393,11 +393,11 @@ class SizeCalculator:
     alloc_sections = ["bss", "noinit"]
     rw_sections = ["datas", "initlevel", "_k_mem_map_ptr", "_k_pipe_ptr",
                    "_k_task_ptr", "_k_task_list", "_k_event_list",
-                   "_k_memory_pool", "exceptions"]
+                   "_k_memory_pool", "exceptions",
+                   "net_if", "net_l2_data", "net_nbr"]
     # These get copied into RAM only on non-XIP
     ro_sections = ["text", "ctors", "init_array", "reset",
-                   "rodata", "devconfig",
-                   "net_if", "net_l2", "net_nbr"]
+                   "rodata", "devconfig", "net_l2"]
 
     def __init__(self, filename):
         """Constructor
