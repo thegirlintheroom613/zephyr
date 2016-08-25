@@ -1,6 +1,6 @@
-# Kconfig.defconfig.nrf51822 - Nordic Semiconductor nRF51822 MCU
+# Kconfig - nRF51 BLENANO board configuration
 #
-# Copyright (c) 2016 Linaro Limited
+# Copyright (c) 2016 Nordic Semiconductor ASA
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,26 +13,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
 
-if SOC_NRF51822
+if BOARD_NRF51_BLENANO
 
-config SOC
-	string
-	default nRF51822
+config BOARD
+	default nrf51_blenano
 
-config SYS_CLOCK_HW_CYCLES_PER_SEC
-	int
-	default 16000000
+if UART_NRF5
 
-config SRAM_SIZE
-	default 16
+config GPIO
+	default y
 
-config FLASH_SIZE
-	default 128
+config GPIO_NRF5
+	default y
 
-config NUM_IRQS
-	int
-	default 26
+config GPIO_NRF5_P0
+	default y
 
-endif # SOC_NRF51822
+endif # UART_NRF5
+
+endif # BOARD_NRF51_BLENANO
