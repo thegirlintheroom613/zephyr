@@ -137,11 +137,6 @@ static void swi4_nrf5_isr(void *arg)
 	work_run(NRF5_IRQ_SWI4_IRQn);
 }
 
-static void swi5_nrf5_isr(void *arg)
-{
-	work_run(NRF5_IRQ_SWI5_IRQn);
-}
-
 static struct net_buf *native_evt_recv(uint8_t *remaining, uint8_t **in)
 {
 	struct bt_hci_evt_hdr hdr;
@@ -380,13 +375,15 @@ static int native_open(void)
 	IRQ_CONNECT(NRF5_IRQ_RTC0_IRQn, 0, rtc0_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_RNG_IRQn, 2, rng_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_SWI4_IRQn, 0, swi4_nrf5_isr, 0, 0);
-	IRQ_CONNECT(NRF5_IRQ_SWI5_IRQn, 2, swi5_nrf5_isr, 0, 0);
 	irq_enable(NRF5_IRQ_POWER_CLOCK_IRQn);
 	irq_enable(NRF5_IRQ_RADIO_IRQn);
 	irq_enable(NRF5_IRQ_RTC0_IRQn);
 	irq_enable(NRF5_IRQ_RNG_IRQn);
 	irq_enable(NRF5_IRQ_SWI4_IRQn);
-	irq_enable(NRF5_IRQ_SWI5_IRQn);
+
+	/* irq_enable clears pending IRQ, but ticker_timer may have pended
+	 * its instance's IRQ, hence try pending it, there is no harm. */
+	ticker_job_sched(1);
 
 	nano_sem_init(&nano_sem_native_recv);
 	fiber_start(native_recv_fiber_stack, sizeof(native_recv_fiber_stack),

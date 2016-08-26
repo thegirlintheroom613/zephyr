@@ -149,6 +149,14 @@ config ALTERA_AVALON_TIMER
 	with Nios II and possibly other Altera soft CPUs. It provides the
 	standard "system clock driver" interfaces.
 
+config TICKER_TIMER
+	bool "Bluetooth Controller's Ticker Timer"
+	default y
+	depends on BLUETOOTH_CONTROLLER
+	select NANOKERNEL_TICKLESS_IDLE_SUPPORTED
+	help
+	Use Bluetooth Controller's ticker instance.
+
 config SYSTEM_CLOCK_DISABLE
 	bool "API to disable system clock"
 	default n
