@@ -345,7 +345,7 @@ static void stats(void)
 static inline int udp_prepare_and_send(struct net_context *context,
 				       struct net_buf *buf)
 {
-#ifdef CONFIG_NETWORKING_IPV6_NO_ND
+#if defined(CONFIG_NETWORKING_IPV6_NO_ND) && !defined(CONFIG_NETWORKING_WITH_BT)
 	uip_ds6_route_t *route_old, *route_new = NULL;
 	uip_ds6_nbr_t *nbr;
 #endif
@@ -373,7 +373,7 @@ static inline int udp_prepare_and_send(struct net_context *context,
 			&NET_BUF_IP(buf)->destipaddr);
 	uip_ipaddr_copy(&NET_BUF_IP(buf)->destipaddr, &tmp);
 
-#ifdef CONFIG_NETWORKING_IPV6_NO_ND
+#if defined(CONFIG_NETWORKING_IPV6_NO_ND) && !defined(CONFIG_NETWORKING_WITH_BT)
 	/* The peer needs to be in neighbor cache before route can be added.
 	 */
 	nbr = uip_ds6_nbr_lookup((uip_ipaddr_t *)&NET_BUF_IP(buf)->destipaddr);
@@ -421,7 +421,7 @@ static inline int udp_prepare_and_send(struct net_context *context,
 		ret = 0;
 	}
 
-#ifdef CONFIG_NETWORKING_IPV6_NO_ND
+#if defined(CONFIG_NETWORKING_IPV6_NO_ND) && !defined(CONFIG_NETWORKING_WITH_BT)
 	if (!route_old && route_new) {
 		/* This will also remove the neighbor cache entry */
 		uip_ds6_route_rm(route_new);
@@ -440,7 +440,7 @@ static inline int udp_prepare_and_send(struct net_context *context,
 static inline int tcp_prepare_and_send(struct net_context *context,
 				       struct net_buf *buf)
 {
-#ifdef CONFIG_NETWORKING_IPV6_NO_ND
+#if defined(CONFIG_NETWORKING_IPV6_NO_ND) && !defined(CONFIG_NETWORKING_WITH_BT)
 	uip_ds6_route_t *route_old, *route_new = NULL;
 	uip_ds6_nbr_t *nbr;
 #endif
@@ -459,7 +459,7 @@ static inline int tcp_prepare_and_send(struct net_context *context,
 			&NET_BUF_IP(buf)->destipaddr);
 	uip_ipaddr_copy(&NET_BUF_IP(buf)->destipaddr, &tmp);
 
-#ifdef CONFIG_NETWORKING_IPV6_NO_ND
+#if defined(CONFIG_NETWORKING_IPV6_NO_ND) && !defined(CONFIG_NETWORKING_WITH_BT)
 	/* The peer needs to be in neighbor cache before route can be added.
 	 */
 	nbr = uip_ds6_nbr_lookup((uip_ipaddr_t *)&NET_BUF_IP(buf)->destipaddr);
@@ -502,7 +502,7 @@ static inline int tcp_prepare_and_send(struct net_context *context,
 	}
 	ip_buf_sent_status(buf) = 0;
 
-#ifdef CONFIG_NETWORKING_IPV6_NO_ND
+#if defined(CONFIG_NETWORKING_IPV6_NO_ND) && !defined(CONFIG_NETWORKING_WITH_BT)
 	if (!route_old && route_new) {
 		/* This will also remove the neighbor cache entry */
 		uip_ds6_route_rm(route_new);
