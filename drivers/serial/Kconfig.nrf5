@@ -37,7 +37,8 @@ config UART_NRF5_NAME
 config UART_NRF5_IRQ_PRI
 	int "UART Interrupt Priority (Interrupt support)"
 	range 0 7
-	default 2
+	default 2 if !SOC_NRF51822
+	default 1 if SOC_NRF51822
 	depends on UART_NRF5
 	depends on UART_INTERRUPT_DRIVEN
 	help

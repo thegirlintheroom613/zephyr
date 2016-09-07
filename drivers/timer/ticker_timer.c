@@ -145,7 +145,11 @@ int _sys_clock_driver_init(struct device *device)
 	}
 
 	IRQ_CONNECT(NRF5_IRQ_RTC0_IRQn, 0, rtc0_nrf5_isr, 0, 0);
+#if defined(CONFIG_SOC_SERIES_NRF51X)
+	IRQ_CONNECT(NRF5_IRQ_SWI5_IRQn, 1, swi5_nrf5_isr, 0, 0);
+#else
 	IRQ_CONNECT(NRF5_IRQ_SWI5_IRQn, 2, swi5_nrf5_isr, 0, 0);
+#endif
 	irq_enable(NRF5_IRQ_RTC0_IRQn);
 	irq_enable(NRF5_IRQ_SWI5_IRQn);
 

@@ -343,9 +343,14 @@ static int native_open(void)
 		return -ENOMEM;
 	}
 
+#if defined(CONFIG_SOC_SERIES_NRF51X)
+	IRQ_CONNECT(NRF5_IRQ_POWER_CLOCK_IRQn, 1, power_clock_nrf5_isr, 0, 0);
+	IRQ_CONNECT(NRF5_IRQ_RNG_IRQn, 1, rng_nrf5_isr, 0, 0);
+#else
 	IRQ_CONNECT(NRF5_IRQ_POWER_CLOCK_IRQn, 2, power_clock_nrf5_isr, 0, 0);
-	IRQ_CONNECT(NRF5_IRQ_RADIO_IRQn, 0, radio_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_RNG_IRQn, 2, rng_nrf5_isr, 0, 0);
+#endif
+	IRQ_CONNECT(NRF5_IRQ_RADIO_IRQn, 0, radio_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_SWI4_IRQn, 0, swi4_nrf5_isr, 0, 0);
 	irq_enable(NRF5_IRQ_POWER_CLOCK_IRQn);
 	irq_enable(NRF5_IRQ_RADIO_IRQn);
