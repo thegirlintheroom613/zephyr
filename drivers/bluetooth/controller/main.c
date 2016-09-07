@@ -59,14 +59,12 @@
 #if defined(CONFIG_SOC_SERIES_NRF51X)
 #define NRF5_IRQ_POWER_CLOCK_IRQn	NRF51_IRQ_POWER_CLOCK_IRQn
 #define NRF5_IRQ_RADIO_IRQn		NRF51_IRQ_RADIO_IRQn
-#define NRF5_IRQ_RTC0_IRQn		NRF51_IRQ_RTC0_IRQn
 #define NRF5_IRQ_RNG_IRQn		NRF51_IRQ_RNG_IRQn
 #define NRF5_IRQ_SWI4_IRQn		NRF51_IRQ_SWI4_IRQn
 #define NRF5_IRQ_SWI5_IRQn		NRF51_IRQ_SWI5_IRQn
 #else /* NRF52 */
 #define NRF5_IRQ_POWER_CLOCK_IRQn	NRF52_IRQ_POWER_CLOCK_IRQn
 #define NRF5_IRQ_RADIO_IRQn		NRF52_IRQ_RADIO_IRQn
-#define NRF5_IRQ_RTC0_IRQn		NRF52_IRQ_RTC0_IRQn
 #define NRF5_IRQ_RNG_IRQn		NRF52_IRQ_RNG_IRQn
 #define NRF5_IRQ_SWI4_IRQn		NRF52_IRQ_SWI4_EGU4_IRQn
 #define NRF5_IRQ_SWI5_IRQn		NRF52_IRQ_SWI5_EGU5_IRQn
@@ -100,31 +98,6 @@ static void power_clock_nrf5_isr(void *arg)
 static void radio_nrf5_isr(void *arg)
 {
 	radio_isr();
-}
-
-static void rtc0_nrf5_isr(void *arg)
-{
-	uint32_t compare0, compare1;
-
-	/* store interested events */
-	compare0 = NRF_RTC0->EVENTS_COMPARE[0];
-	compare1 = NRF_RTC0->EVENTS_COMPARE[1];
-
-	/* On compare0 run ticker worker instance0 */
-	if (compare0) {
-		NRF_RTC0->EVENTS_COMPARE[0] = 0;
-
-		ticker_trigger(0);
-	}
-
-	/* On compare1 run ticker worker instance1 */
-	if (compare1) {
-		NRF_RTC0->EVENTS_COMPARE[1] = 0;
-
-		ticker_trigger(1);
-	}
-
-	work_run(RTC0_IRQn);
 }
 
 static void rng_nrf5_isr(void *arg)
@@ -372,12 +345,10 @@ static int native_open(void)
 
 	IRQ_CONNECT(NRF5_IRQ_POWER_CLOCK_IRQn, 2, power_clock_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_RADIO_IRQn, 0, radio_nrf5_isr, 0, 0);
-	IRQ_CONNECT(NRF5_IRQ_RTC0_IRQn, 0, rtc0_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_RNG_IRQn, 2, rng_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_SWI4_IRQn, 0, swi4_nrf5_isr, 0, 0);
 	irq_enable(NRF5_IRQ_POWER_CLOCK_IRQn);
 	irq_enable(NRF5_IRQ_RADIO_IRQn);
-	irq_enable(NRF5_IRQ_RTC0_IRQn);
 	irq_enable(NRF5_IRQ_RNG_IRQn);
 	irq_enable(NRF5_IRQ_SWI4_IRQn);
 

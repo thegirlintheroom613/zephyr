@@ -10,8 +10,10 @@
 
 #if defined(CONFIG_SOC_SERIES_NRF51X)
 #define NRF5_IRQ_SWI5_IRQn		NRF51_IRQ_SWI5_IRQn
+#define NRF5_IRQ_RTC0_IRQn		NRF51_IRQ_RTC0_IRQn
 #else /* NRF52 */
 #define NRF5_IRQ_SWI5_IRQn		NRF52_IRQ_SWI5_EGU5_IRQn
+#define NRF5_IRQ_RTC0_IRQn		NRF52_IRQ_RTC0_IRQn
 #endif
 
 static uint8_t ALIGNED(4) _ticker_nodes[1][TICKER_NODE_T_SIZE];
@@ -99,6 +101,31 @@ static void swi5_nrf5_isr(void *arg)
 	work_run(NRF5_IRQ_SWI5_IRQn);
 }
 
+static void rtc0_nrf5_isr(void *arg)
+{
+	uint32_t compare0, compare1;
+
+	/* store interested events */
+	compare0 = NRF_RTC0->EVENTS_COMPARE[0];
+	compare1 = NRF_RTC0->EVENTS_COMPARE[1];
+
+	/* On compare0 run ticker worker instance0 */
+	if (compare0) {
+		NRF_RTC0->EVENTS_COMPARE[0] = 0;
+
+		ticker_trigger(0);
+	}
+
+	/* On compare1 run ticker worker instance1 */
+	if (compare1) {
+		NRF_RTC0->EVENTS_COMPARE[1] = 0;
+
+		ticker_trigger(1);
+	}
+
+	work_run(RTC0_IRQn);
+}
+
 int _sys_clock_driver_init(struct device *device)
 {
 	uint32_t us;
@@ -117,7 +144,9 @@ int _sys_clock_driver_init(struct device *device)
 		return -1;
 	}
 
+	IRQ_CONNECT(NRF5_IRQ_RTC0_IRQn, 0, rtc0_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_SWI5_IRQn, 2, swi5_nrf5_isr, 0, 0);
+	irq_enable(NRF5_IRQ_RTC0_IRQn);
 	irq_enable(NRF5_IRQ_SWI5_IRQn);
 
 	us = 1000000/CONFIG_SYS_CLOCK_TICKS_PER_SEC;
