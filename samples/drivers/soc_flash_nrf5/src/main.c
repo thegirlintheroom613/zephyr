@@ -39,9 +39,13 @@ void main(void)
 {
 	struct device *flash_dev;
 	uint32_t buf_array_1[4] = { TEST_DATA_WORD_0, TEST_DATA_WORD_1,
-				TEST_DATA_WORD_2, TEST_DATA_WORD_3 };
+				    TEST_DATA_WORD_2, TEST_DATA_WORD_3 };
 	uint32_t buf_array_2[4] = { TEST_DATA_WORD_3, TEST_DATA_WORD_1,
-				TEST_DATA_WORD_2, TEST_DATA_WORD_0 };
+				    TEST_DATA_WORD_2, TEST_DATA_WORD_0 };
+	uint32_t buf_array_3[8] = { TEST_DATA_WORD_0, TEST_DATA_WORD_1,
+				    TEST_DATA_WORD_2, TEST_DATA_WORD_3,
+				    TEST_DATA_WORD_0, TEST_DATA_WORD_1,
+				    TEST_DATA_WORD_2, TEST_DATA_WORD_3 };
 	uint32_t buf_word = 0;
 	uint32_t i, offset;
 
@@ -121,4 +125,38 @@ void main(void)
 		}
 	}
 	flash_write_protection_set(flash_dev, true);
+
+	PRINT("\nTest 5: Flash erase page at 0x%x\n", FLASH_TEST_OFFSET);
+	if (flash_erase(flash_dev, FLASH_TEST_OFFSET, FLASH_PAGE_SIZE) != 0) {
+		PRINT("   Flash erase failed!\n");
+	} else {
+		PRINT("   Flash erase succeeded!\n");
+	}
+
+	PRINT("\nTest 6: Non-word aligned write (word array 3)\n");
+	flash_write_protection_set(flash_dev, false);
+	for (i = 0; i < TEST_DATA_LEN * 2; i++) {
+		offset = FLASH_TEST_OFFSET + (i << 2) + 1;
+		PRINT("   Attempted to write %x at 0x%x\n", buf_array_3[i],
+				offset);
+		if (flash_write(flash_dev, offset, &buf_array_3[i],
+					TEST_DATA_LEN * 2) != 0) {
+			PRINT("   Flash write failed!\n");
+			return;
+		}
+		PRINT("   Attempted to read 0x%x\n", offset);
+		if (flash_read(flash_dev, offset, &buf_word,
+					TEST_DATA_LEN * 2) != 0) {
+			PRINT("   Flash read failed!\n");
+			return;
+		}
+		PRINT("   Data read: %x\n", buf_word);
+		if (buf_array_3[i] == buf_word) {
+			PRINT("   Data read matches data written. Good!\n");
+		} else {
+			PRINT("   Data read does not match data written!\n");
+		}
+	}
+	flash_write_protection_set(flash_dev, true);
+
 }
