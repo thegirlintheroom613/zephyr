@@ -94,6 +94,9 @@ static struct etimer periodic;
 extern struct etimer uip_reass_timer;
 #endif
 
+void net_context_set_internal_connection(struct net_context *context,
+					 void *conn);
+
 #if UIP_TCP
 /**
  * \internal Structure for holding a TCP port and a process ID.
@@ -512,7 +515,8 @@ eventhandler(process_event_t ev, process_data_t data, struct net_buf *buf)
 
 	if (!ret) {
           /* Packet was not sent properly */
-          ip_buf_unref(buf);
+          PRINTF("tcpip_output: not sent properly, but no unref %p\n", buf);
+          // ip_buf_unref(buf);
 	}
       }
       break;
@@ -842,6 +846,14 @@ tcpip_poll_udp(struct uip_udp_conn *conn)
 void
 tcpip_poll_tcp(struct uip_conn *conn, struct net_buf *data_buf)
 {
+  /* TODO: Fix the ref count for the SYN buffer, since it is not attached
+   * anywhere, and in case it fails to reach the destination, it will eat
+   * the TX buffers
+   *
+   * The buffer used to uip_set_conn is simply to reuse the data sent by
+   * the user, and not SYN itself.
+   */
+
   /* We are sending here the initial SYN */
   struct net_buf *buf = ip_buf_get_tx(conn->appstate.state);
   uip_set_conn(data_buf) = conn;
@@ -851,6 +863,7 @@ tcpip_poll_tcp(struct uip_conn *conn, struct net_buf *data_buf)
    * net_core.c:net_send().
    */
   conn->buf = ip_buf_ref(data_buf);
+  net_context_set_internal_connection(ip_buf_context(data_buf), conn);
 
   process_post_synch(&tcpip_process, TCP_POLL, conn, buf);
 }
@@ -861,7 +874,8 @@ void tcpip_resend_syn(struct uip_conn *conn, struct net_buf *buf)
   /* The network driver will unref the buf so in order not to loose the
    * buffer, we need to ref it here.
    */
-  ip_buf_ref(buf);
+  PRINTF("tcpip_resend_syn: not incrementing ref for buf %p\n", buf);
+  //ip_buf_ref(buf);
 
   /* We are re-sending here the SYN */
   process_post_synch(&tcpip_process, TCP_POLL, conn, buf);

@@ -118,6 +118,8 @@ static struct net_dev {
 int net_send(struct net_buf *buf)
 {
 	int ret = 0;
+	struct uip_conn *conn;
+	int status;
 
 	if (!buf || ip_buf_len(buf) == 0) {
 		return -ENODATA;
@@ -145,43 +147,45 @@ int net_send(struct net_buf *buf)
 	if (ip_buf_context(buf) &&
 	    net_context_get_tuple(ip_buf_context(buf))->ip_proto ==
 							IPPROTO_TCP) {
-		struct uip_conn *conn;
-		int status;
 		uint8_t retry_count;
+
+		/* FIXME */
+		if (!net_context_get_receiver_registered(ip_buf_context(buf))) {
+			/* Set timeout again to 0 since we will establish a
+			 * new connection.
+			 */
+			net_context_tcp_set_retry_count(ip_buf_context(buf), 0);
+		}
 
 		net_context_tcp_init(ip_buf_context(buf), buf,
 				     NET_TCP_TYPE_CLIENT);
 
 		status = net_context_get_connection_status(
 							ip_buf_context(buf));
-		NET_DBG("context %p buf %p status %d\n",
-			ip_buf_context(buf), buf, status);
+		NET_DBG("Context %p buf %p status %d\n", ip_buf_context(buf),
+							buf, status);
 
 		switch (status) {
 		case EISCONN:
 			/* User should be able to send new data now. */
-			NET_DBG("Send new data buf %p ref %d\n", buf, buf->ref);
-			net_context_set_connection_status(ip_buf_context(buf),
-							  0);
-			conn = (struct uip_conn *)net_context_get_internal_connection(ip_buf_context(buf));
-			if (conn->buf) {
-				ip_buf_unref(conn->buf);
-
-				if (conn->buf == buf) {
-					conn->buf = NULL;
-					return 0;
-				}
-
-				conn->buf = NULL;
-			}
 			break;
 
-		case -EALREADY:
-			NET_DBG("Connection established\n");
-			return 0;
-
 		case -EINPROGRESS:
-			NET_DBG("Connection being established\n");
+			NET_DBG("Connection being established (no SYNACK)\n");
+			/* No need to abort here as uip will give timeout if no
+			 * SYNACK. We only need to make sure we unref conn->buf
+			 * properly once we get the timeout.
+			 */
+			return status;
+
+		case -EALREADY:
+			NET_DBG("Establishement already in progress\n");
+			NET_DBG("Waiting ACK from the fist package !SYN\n");
+			/* Here we are waiting for ACK from our first package
+			 * after SYN. TODO: Check if we should retry sending,
+			 * otherwise just abort after a few tries and clean
+			 * up conn->ref.
+			 */
 			retry_count = net_context_tcp_get_retry_count(
 							ip_buf_context(buf));
 			if (retry_count < MAX_TCP_RETRY_COUNT) {
@@ -191,25 +195,57 @@ int net_send(struct net_buf *buf)
 			}
 			net_context_tcp_set_retry_count(ip_buf_context(buf),
 							0);
-			break;
+			goto abort_connection;
+
+		case -ETIMEDOUT:
+			NET_DBG("Connection timeout\n");
+			goto abort_connection;
 
 		case -ECONNRESET:
 			NET_DBG("Connection reset\n");
-			net_context_unset_receiver_registered(
-				ip_buf_context(buf));
+			goto abort_connection;
+
+		case -ECONNABORTED:
+			NET_DBG("Connection aborted\n");
+			goto abort_connection;
+
+		case -ESHUTDOWN:
+			NET_DBG("Connection shutting down, waiting close\n");
 			return status;
+
+		default:
+			if (status < 0) {
+				NET_DBG("Unknown connection status, "
+						"aborting (%d)\n", status);
+				goto abort_connection;
+			}
 		}
 
 		ret = status;
 	}
 #endif
 
+	NET_DBG("Adding buffer %p to the tx_queue\n", buf);
 	nano_fifo_put(&netdev.tx_queue, buf);
 
 	/* Tell the IP stack it can proceed with the packet */
 	fiber_wakeup(tx_fiber_id);
 
 	return ret;
+
+abort_connection:
+	/* Check if the internal reference is still available */
+	conn = (struct uip_conn *)
+		net_context_get_internal_connection(ip_buf_context(buf));
+	if (conn && conn->buf) {
+		NET_DBG("Aborting connection and unref conn->buf %p\n",
+							conn->buf);
+		ip_buf_unref(conn->buf);
+		conn->buf = NULL;
+	}
+	net_context_unset_receiver_registered(ip_buf_context(buf));
+
+	return status;
 }
 
 #ifdef CONFIG_NETWORKING_STATISTICS

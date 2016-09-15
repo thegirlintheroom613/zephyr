@@ -986,25 +986,31 @@ ext_hdr_options_process(struct net_buf *buf)
 static inline void handle_tcp_retransmit_timer(struct net_buf *not_used,
 					       void *ptr)
 {
-  struct uip_conn *conn = ptr;
+  struct net_buf *buf = ptr;
+  struct uip_conn *conn = uip_conn(buf);
 
-  PRINTF("%s: connection %p buf %p\n", __func__, conn, conn ? conn->buf : 0);
-  if (conn && conn->buf) {
+  PRINTF("%s: connection %p buf %p\n", __func__, conn, buf);
+  if (buf) {
     conn->timer = 0;
-    if (uip_process(&conn->buf, UIP_TIMER)) {
-      tcpip_resend_syn(conn, conn->buf);
+    PRINTF("handle_tcp_retransmit_timer: processing package %p\n", buf);
+    if (uip_process(&buf, UIP_TIMER)) {
+      tcpip_resend_syn(conn, buf);
     }
   }
 }
 
-static inline void tcp_set_retrans_timer(struct uip_conn *conn)
+static inline void tcp_set_retrans_timer(struct net_buf *buf)
 {
+  struct uip_conn *conn = uip_conn(buf);
+
+  PRINTF("tcp_set_retrans_timer: setting retrans timer for %p\n", buf);
   ctimer_set(NULL, &conn->retransmit_timer, CLOCK_SECOND,
-	     &handle_tcp_retransmit_timer, conn);
+	     &handle_tcp_retransmit_timer, buf);
 }
 
 static inline void tcp_cancel_retrans_timer(struct uip_conn *conn)
 {
+  PRINTF("tcp_cancel_retrans_timer: canceling timer for conn %p\n", conn);
   ctimer_stop(&conn->retransmit_timer);
 }
 #endif /* UIP_TCP */
@@ -1082,13 +1088,14 @@ uip_process(struct net_buf **buf_out, uint8_t flag)
       case UIP_CLOSING:
       case UIP_TIME_WAIT:
         ip_buf_sent_status(buf) = -ECONNABORTED;
+        uip_flags(buf) = UIP_ABORT;
 	goto drop;
       }
 
       if (uip_outstanding(uip_connr)) {
         ip_buf_sent_status(buf) = -EAGAIN;
-        PRINTF("Retry to send packet len %d, outstanding data len %d, "
-	       "conn %p\n", uip_len(buf), uip_outstanding(uip_connr),
+        PRINTF("Retry to send packet len %d, outstanding data len %d (buf), "
+	       "conn %p\n", uip_len(buf), uip_outstanding(uip_connr), uip_connr->buf,
 		uip_connr);
 	flag = UIP_TIMER;
 	goto tcp_retry;
@@ -1958,11 +1965,13 @@ uip_process(struct net_buf **buf_out, uint8_t flag)
   /* Our response will be a SYNACK. */
 #if UIP_ACTIVE_OPEN
  tcp_send_synack:
+  PRINTF("Sending SYNACK %p, syn buf %p\n", uip_connr->buf, buf);
   UIP_TCP_BUF(buf)->flags = TCP_ACK;
 
 tcp_send_syn:
+  PRINTF("Sending SYN, tcp_send_syn for %p\n", buf);
   UIP_TCP_BUF(buf)->flags |= TCP_SYN;
-  tcp_set_retrans_timer(uip_connr);
+  tcp_set_retrans_timer(buf);
 #else /* UIP_ACTIVE_OPEN */
  tcp_send_synack:
   UIP_TCP_BUF(buf)->flags = TCP_SYN | TCP_ACK;
@@ -2163,21 +2172,15 @@ tcp_send_syn:
 	ip_buf_sent_status(buf) = 0;
 	uip_set_conn(buf) = uip_connr;
 
+	PRINTF("SYNACK received for %p, %s:%d\n", buf, __func__, __LINE__);
+
 	if (uip_connr->buf) {
           /* Now that we know the original connection request, clear
            * the buf in connr
            */
-          net_context_set_connection_status(ip_buf_context(uip_connr->buf), 0);
-          net_context_set_internal_connection(ip_buf_context(uip_connr->buf),
-					      uip_connr);
           tcp_cancel_retrans_timer(uip_connr);
 
-	  /* We received ACK for syn */
-	  if (uip_connr->buf) {
-	     net_context_set_connection_status(ip_buf_context(uip_connr->buf), -EINPROGRESS);
-	  }
-
-	  /* Now send the pending data */
+	  /* Now send the pending data (user's first package) */
 	  buf = uip_connr->buf;
 	  *buf_out = buf;
 
@@ -2193,6 +2196,7 @@ tcp_send_syn:
 	return 0;
       }
       /* Inform the application that the connection failed */
+      PRINTF("aborting connection for bu %p\n", buf);
       uip_flags(buf) = UIP_ABORT;
       UIP_APPCALL(buf);
       /* The connection is closed after we send the RST */
@@ -2306,22 +2310,18 @@ tcp_send_syn:
 
 	if (uip_connr->buf) {
 	  net_context_tcp_set_pending(ip_buf_context(uip_connr->buf), NULL);
-          net_context_set_internal_connection(ip_buf_context(uip_connr->buf),
-					      uip_connr);
 
 	  /* At this point we have received ACK to data in uip_connr->buf */
 
 	  /* This is not an error but tells net_core.c:net_send() that
 	   * user should be able to send now more data.
 	   */
-	  net_context_set_connection_status(ip_buf_context(uip_connr->buf),
-					    EISCONN);
+	  net_context_set_connection_status(ip_buf_context(uip_connr->buf), 0);
 
-	  /* Eventually the uip_connr->buf will be freed
-	   * by net_core.c:net_send()
-	   */
-
-	  tcp_cancel_retrans_timer(uip_connr);
+	  /* We can release conn->buf here, since the package was already used */
+	  PRINTF("EISCON: Releasing conn->buf %p\n", uip_connr->buf);
+	  ip_buf_unref(uip_connr->buf);
+	  uip_connr->buf = NULL;
 
 	} else {
 	  /* We have no pending data so this will cause ACK to be sent to

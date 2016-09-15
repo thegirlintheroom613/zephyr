@@ -287,11 +287,11 @@ int net_context_tcp_send(struct net_buf *buf)
 	connected = uip_flags(buf) & UIP_CONNECTED;
 	reset = uip_flags(buf) & UIP_ABORT;
 
-	/* If the buffer ref is 1, then the buffer was sent and it
-	 * is cleared already.
+	/* If the buffer ref is 1, then the buffer was not sent
+	 * and needs another try.
 	 */
 	if (buf->ref == 1) {
-		return 0;
+		return 1;
 	}
 
 	return ip_buf_sent_status(buf);
@@ -320,8 +320,6 @@ PROCESS_THREAD(tcp, ev, data, buf, user_data)
 				continue;
 			}
 
-			context->connection_status = ip_buf_sent_status(buf);
-
 			do {
 				context = user_data;
 				if (!context || !buf) {
@@ -339,9 +337,15 @@ PROCESS_THREAD(tcp, ev, data, buf, user_data)
 						      POINTER_TO_INT(data),
 						      buf);
 
+				NET_DBG("uIP flags before process wait %d\n",
+							uip_flags(buf));
+
 				PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
 
-				if (uip_timedout(buf)) {
+				NET_DBG("uIP flags after write %d\n",
+							uip_flags(buf));
+
+				if (uip_timedout(buf) || uip_aborted(buf)) {
 					break;
 				}
 
@@ -352,10 +356,16 @@ PROCESS_THREAD(tcp, ev, data, buf, user_data)
 				  uip_aborted(buf) ||
 				  uip_timedout(buf)));
 
+			NET_DBG("uIP closed/aborted/timedout, uIP flags %d\n",
+							uip_flags(buf));
+
+			/* Errors we can get when we send our package */
+
 			context = user_data;
 
 			if (uip_timedout(buf)) {
 				ip_buf_sent_status(buf) = -ETIMEDOUT;
+				NET_DBG("Setting connection timeout\n");
 				if (context) {
 					context->connection_status = -ETIMEDOUT;
 				}
@@ -364,18 +374,58 @@ PROCESS_THREAD(tcp, ev, data, buf, user_data)
 
 			if (context &&
 			    context->tcp_type == NET_TCP_TYPE_CLIENT) {
-				NET_DBG("\nConnection closed.\n");
+				NET_DBG("Connection closed, -ECONNRESET\n");
 				ip_buf_sent_status(buf) = -ECONNRESET;
+				context->connection_status = -ECONNRESET;
 			}
 
 			continue;
 		} else {
+			if (buf && uip_timedout(buf)) {
+				struct net_context *context = user_data;
+				NET_DBG("Connection timedout context %p\n",
+								user_data);
+
+				/* In progress means that the timeout happened
+				 * when sending SYN, so release the internal
+				 * references (created by uip on tcp_connect)
+				 */
+				if (context->connection_status == -EINPROGRESS) {
+					NET_DBG("Connection not yet set, free "
+							"SYN buf %p\n", buf);
+					ip_buf_unref(buf);
+				}
+				context->connection_status = -ETIMEDOUT;
+				continue;
+			}
+
 			if (buf && uip_aborted(buf)) {
 				struct net_context *context = user_data;
 				NET_DBG("Connection aborted context %p\n",
-					user_data);
+							user_data);
 				context->connection_status = -ECONNRESET;
 				continue;
+			}
+
+			/* Check if flag is CLOSE only, part of LAST_ACK */
+			if (buf && (uip_flags(buf) == UIP_CLOSE)) {
+				struct net_context *context = user_data;
+				NET_DBG("Connection closed by the peer %p\n",
+							user_data);
+				context->connection_status = -ECONNRESET;
+				continue;
+			}
+
+			/* We could have more data when closing, wait final
+			 * and set shutdown now to avoid getting more data
+			 * from the app
+			 */
+			if (buf && uip_closed(buf)) {
+				struct net_context *context = user_data;
+				NET_DBG("Connection shutdown %p\n",
+							user_data);
+				context->connection_status = -ESHUTDOWN;
+				goto read_data;
 			}
 
 			if (buf && uip_connected(buf)) {
