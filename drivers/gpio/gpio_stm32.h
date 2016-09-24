@@ -34,8 +34,12 @@ struct gpio_stm32_config {
 	uint32_t *base;
 	/* IO port */
 	enum stm32_pin_port port;
+#ifdef CONFIG_SOC_SERIES_STM32F1X
 	/* clock subsystem */
 	clock_control_subsys_t clock_subsys;
+#elif CONFIG_SOC_SERIES_STM32F4X
+	struct stm32f4x_pclken pclken;
+#endif
 };
 
 /**
@@ -62,8 +66,9 @@ int stm32_gpio_flags_to_conf(int flags, int *conf);
  * @param base_addr GPIO port base address
  * @param pin IO pin
  * @param func GPIO mode
+ * @param altf Alternate function
  */
-int stm32_gpio_configure(uint32_t *base_addr, int pin, int func);
+int stm32_gpio_configure(uint32_t *base_addr, int pin, int func, int altf);
 
 /**
  * @brief helper for setting of GPIO pin output

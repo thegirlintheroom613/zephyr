@@ -6,3 +6,4 @@ obj-$(CONFIG_SPI_K64) += spi_k64.o
 ifeq ($(CONFIG_SPI_SLAVE),y)
 	obj-$(CONFIG_SPI_NRF5) += spi_nrf5_slave.o
 endif
+obj-$(CONFIG_SPI_STM32) += spi_stm32.o

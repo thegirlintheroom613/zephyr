@@ -42,17 +42,39 @@
  */
 static int enable_port(uint32_t port, struct device *clk)
 {
-	clock_control_subsys_t subsys = stm32_get_port_clock(port);
-
 	/* enable port clock */
 	if (!clk) {
 		clk = device_get_binding(STM32_CLOCK_CONTROL_NAME);
 	}
 
+	/* TODO: Merge this and move the port clock to the soc file */
+#ifdef	CONFIG_SOC_SERIES_STM32F1X
+	clock_control_subsys_t subsys = stm32_get_port_clock(port);
+
 	return clock_control_on(clk, subsys);
+
+#elif CONFIG_SOC_SERIES_STM32F4X
+
+	struct stm32f4x_pclken pclken;
+	uint32_t ports_enable[STM32_PORTS_MAX] = {
+		STM32F4X_CLOCK_ENABLE_GPIOA,
+		STM32F4X_CLOCK_ENABLE_GPIOB,
+		STM32F4X_CLOCK_ENABLE_GPIOC,
+		STM32F4X_CLOCK_ENABLE_GPIOD,
+		STM32F4X_CLOCK_ENABLE_GPIOE,
+		STM32F4X_CLOCK_ENABLE_GPIOF,
+		STM32F4X_CLOCK_ENABLE_GPIOG,
+		STM32F4X_CLOCK_ENABLE_GPIOH,
+	};
+	/* AHB1 bus for all the GPIO ports */
+	pclken.bus = STM32F4X_CLOCK_BUS_AHB1;
+	pclken.enr = ports_enable[port];
+
+	return clock_control_on(clk, (clock_control_subsys_t *) &pclken);
+#endif
 }
 
-static int stm32_pin_configure(int pin, int func)
+static int stm32_pin_configure(int pin, int func, int altf)
 {
 	/* determine IO port registers location */
 	uint32_t offset = STM32_PORT(pin) * GPIO_REG_SIZE;
@@ -61,7 +83,8 @@ static int stm32_pin_configure(int pin, int func)
 	/* not much here, on STM32F10x the alternate function is
 	 * controller by setting up GPIO pins in specific mode.
 	 */
-	return stm32_gpio_configure((uint32_t *)port_base, STM32_PIN(pin), func);
+	return stm32_gpio_configure((uint32_t *)port_base,
+					STM32_PIN(pin),	func, altf);
 }
 
 /**
@@ -86,7 +109,7 @@ int _pinmux_stm32_set(uint32_t pin, uint32_t func,
 	/* determine config for alternate function */
 	config = stm32_get_pin_config(pin, func);
 
-	return stm32_pin_configure(pin, config);
+	return stm32_pin_configure(pin, config, func);
 }
 
 /**
