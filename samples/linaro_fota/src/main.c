@@ -53,7 +53,7 @@
 #define STACKSIZE 2560
 char fiberStack[STACKSIZE];
 
-int poll_sleep = 15 * sys_clock_ticks_per_sec;
+int poll_sleep = 20 * sys_clock_ticks_per_sec;
 struct device *flash_dev;
 
 static bool bt_connection_state = false;
