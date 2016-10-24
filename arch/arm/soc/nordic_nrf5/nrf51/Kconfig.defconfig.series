@@ -22,6 +22,9 @@ source "arch/arm/soc/nordic_nrf5/nrf51/Kconfig.defconfig.nrf51*"
 config SOC_SERIES
 	default nrf51
 
+config CORTEX_M_SYSTICK
+	default n
+
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	int
 	default 32768

@@ -80,31 +80,6 @@ static void radio_nrf5_isr(void *arg)
 	radio_isr();
 }
 
-static void rtc0_nrf5_isr(void *arg)
-{
-	uint32_t compare0, compare1;
-
-	/* store interested events */
-	compare0 = NRF_RTC0->EVENTS_COMPARE[0];
-	compare1 = NRF_RTC0->EVENTS_COMPARE[1];
-
-	/* On compare0 run ticker worker instance0 */
-	if (compare0) {
-		NRF_RTC0->EVENTS_COMPARE[0] = 0;
-
-		ticker_trigger(0);
-	}
-
-	/* On compare1 run ticker worker instance1 */
-	if (compare1) {
-		NRF_RTC0->EVENTS_COMPARE[1] = 0;
-
-		ticker_trigger(1);
-	}
-
-	work_run(RTC0_IRQn);
-}
-
 static void rng_nrf5_isr(void *arg)
 {
 	rng_isr();
@@ -113,11 +88,6 @@ static void rng_nrf5_isr(void *arg)
 static void swi4_nrf5_isr(void *arg)
 {
 	work_run(NRF5_IRQ_SWI4_IRQn);
-}
-
-static void swi5_nrf5_isr(void *arg)
-{
-	work_run(NRF5_IRQ_SWI5_IRQn);
 }
 
 static void recv_fiber(int unused0, int unused1)
@@ -305,15 +275,15 @@ static int hci_driver_open(void)
 	}
 
 	IRQ_CONNECT(NRF5_IRQ_RADIO_IRQn, 0, radio_nrf5_isr, 0, 0);
-	IRQ_CONNECT(NRF5_IRQ_RTC0_IRQn, 0, rtc0_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_RNG_IRQn, 1, rng_nrf5_isr, 0, 0);
 	IRQ_CONNECT(NRF5_IRQ_SWI4_IRQn, 0, swi4_nrf5_isr, 0, 0);
-	IRQ_CONNECT(NRF5_IRQ_SWI5_IRQn, 1, swi5_nrf5_isr, 0, 0);
 	irq_enable(NRF5_IRQ_RADIO_IRQn);
-	irq_enable(NRF5_IRQ_RTC0_IRQn);
 	irq_enable(NRF5_IRQ_RNG_IRQn);
 	irq_enable(NRF5_IRQ_SWI4_IRQn);
-	irq_enable(NRF5_IRQ_SWI5_IRQn);
+
+	/* irq_enable clears pending IRQ, but ticker_timer may have pended
+	 * its instance's IRQ, hence try pending it, there is no harm. */
+	ticker_job_sched(1);
 
 	nano_sem_init(&nano_sem_recv);
 	fiber_start(recv_fiber_stack, sizeof(recv_fiber_stack),
