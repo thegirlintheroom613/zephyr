@@ -391,4 +391,4 @@ static int _bt_spi_init(struct device *unused)
 	return 0;
 }
 
-SYS_INIT(_bt_spi_init, NANOKERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(_bt_spi_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
