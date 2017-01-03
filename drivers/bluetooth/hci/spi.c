@@ -231,7 +231,7 @@ static void spi_recv_thread(void)
 			switch (bt_buf_type) {
 			case BT_BUF_EVT:
 				BT_DBG("BT rx buf type EVT");
-				buf = bt_buf_get_evt(bt_buf_type);
+				buf = bt_buf_get_evt(bt_buf_type, K_NO_WAIT);
 				if (!buf) {
 					BT_ERR("No available event buffers!");
 					continue;
@@ -239,7 +239,7 @@ static void spi_recv_thread(void)
 				break;
 			case BT_BUF_ACL_IN:
 				BT_DBG("BT rx buf type ACL_IN");
-				buf = bt_buf_get_acl();
+				buf = bt_buf_get_acl(K_NO_WAIT);
 				if (!buf) {
 					BT_ERR("No available ACL buffers!");
 					continue;
