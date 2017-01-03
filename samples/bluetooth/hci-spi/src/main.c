@@ -62,9 +62,8 @@ static K_FIFO_DEFINE(rx_queue);
 		      sizeof(struct bt_hci_cmd_hdr) + \
 		      CONFIG_BLUETOOTH_MAX_CMD_LEN)
 
-static struct k_fifo avail_tx;
-static NET_BUF_POOL(tx_pool, CONFIG_BLUETOOTH_HCI_CMD_COUNT, CMD_BUF_SIZE,
-		    &avail_tx, NULL, sizeof(uint8_t));
+NET_BUF_POOL_DEFINE(tx_pool, CONFIG_BLUETOOTH_HCI_CMD_COUNT, CMD_BUF_SIZE,
+		    sizeof(uint8_t), NULL);
 
 #define BT_L2CAP_MTU 251
 /* Data size needed for ACL buffers */
@@ -73,9 +72,7 @@ static NET_BUF_POOL(tx_pool, CONFIG_BLUETOOTH_HCI_CMD_COUNT, CMD_BUF_SIZE,
 			 4 /* L2CAP header size */ + \
 			 BT_L2CAP_MTU)
 
-static struct k_fifo avail_acl_tx;
-static NET_BUF_POOL(acl_tx_pool, 2, BT_BUF_ACL_SIZE, &avail_acl_tx, NULL,
-		    sizeof(uint8_t));
+NET_BUF_POOL_DEFINE(acl_tx_pool, 2, BT_BUF_ACL_SIZE, sizeof(uint8_t), NULL);
 
 /* FIXME: This make it nRF5 specific, generalise it later */
 #define SPI_OP_MODE		SPI_NRF5_OP_MODE_SLAVE
@@ -191,7 +188,7 @@ static inline int bt_spi_tx(struct net_buf *buf)
 
 	/* In case there are already more bufs in the queue, send more */
 	while (remaining >= BT_MAX_BUF_SIZE + 2) {
-		buf_extra = net_buf_get_timeout(&rx_queue, 0, TICKS_NONE);
+		buf_extra = net_buf_get(&rx_queue, K_NO_WAIT);
 		if (!buf_extra) {
 			break;
 		}
@@ -262,7 +259,7 @@ static void bt_spi_rx_thread(void)
 		switch (bt_buf_type) {
 		case BT_BUF_CMD:
 			SYS_LOG_DBG("BT rx buf type BUF_CMD");
-			buf = net_buf_get(&avail_tx, 0);
+			buf = net_buf_alloc(&tx_pool, K_NO_WAIT);
 			if (!buf) {
 				SYS_LOG_ERR("Cannot get free tx buffer");
 				continue;
@@ -270,7 +267,7 @@ static void bt_spi_rx_thread(void)
 			break;
 		case BT_BUF_ACL_OUT:
 			SYS_LOG_DBG("BT rx buf type ACL_OUT");
-			buf = net_buf_get(&avail_acl_tx, 0);
+			buf = net_buf_alloc(&acl_tx_pool, K_NO_WAIT);
 			if (!buf) {
 				SYS_LOG_ERR("Cannot get free acl tx buffer");
 				continue;
@@ -297,8 +294,8 @@ static void bt_spi_tx_thread(void)
 	struct net_buf *buf;
 
 	while (1) {
-		/* With TICKS_UNLIMITED we always get a valid buffer */
-		buf = net_buf_get_timeout(&rx_queue, 0, TICKS_UNLIMITED);
+		/* With K_FOREVER we always get a valid buffer */
+		buf = net_buf_get(&rx_queue, K_FOREVER);
 		bt_spi_tx(buf);
 	}
 }
@@ -330,10 +327,6 @@ void main(void)
 				GPIO_RDY_DIR | GPIO_RDY_PULL);
 	gpio_pin_configure(gpio_dev, GPIO_REQ_PIN,
 				GPIO_REQ_DIR | GPIO_REQ_PULL);
-
-	/* Initialize the buffer pools */
-	net_buf_pool_init(tx_pool);
-	net_buf_pool_init(acl_tx_pool);
 
 	k_sem_init(&sem_rx_thread, 0, 1);
 	k_sem_init(&sem_tx_thread, 0, 1);

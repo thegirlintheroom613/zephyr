@@ -273,7 +273,7 @@ static void spi_send_thread(void)
 	BT_DBG("");
 
 	while (1) {
-		buf = net_buf_get_timeout(&bt_tx_queue, 0, TICKS_UNLIMITED);
+		buf = net_buf_get(&bt_tx_queue, K_FOREVER);
 		k_sem_take(&sem_spi_active, K_FOREVER);
 
 		hexdump("<=", buf->data, buf->len);
