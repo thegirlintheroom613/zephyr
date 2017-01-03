@@ -81,7 +81,7 @@
 /* Limit SPI buffer size to 255 based on the limit required by nRF51 */
 #define SPI_MAX_BUF_SIZE	255
 
-#define SPI_RDY_WAIT_TIMEOUT	1000
+#define SPI_RDY_WAIT_TIMEOUT	K_MSEC(1000)
 
 static BT_STACK_NOINIT(spi_send_thread_stack, 256);
 static BT_STACK_NOINIT(spi_recv_thread_stack, 256);
