@@ -93,7 +93,7 @@ struct nano_sem nano_sem_spi_active;
 static struct device *spi_dev;
 static struct device *gpio_dev;
 
-struct nano_fifo bt_tx_queue;
+static K_FIFO_DEFINE(bt_tx_queue);
 
 static struct gpio_callback gpio_req_cb;
 static struct gpio_callback gpio_rdy_cb;
@@ -343,8 +343,6 @@ static int spi_open(void)
 	nano_sem_init(&nano_sem_rdy);
 	nano_sem_init(&nano_sem_spi_active);
 	nano_sem_give(&nano_sem_spi_active);
-
-	nano_fifo_init(&bt_tx_queue);
 
 	fiber_start(spi_send_fiber_stack, sizeof(spi_send_fiber_stack),
 			(nano_fiber_entry_t) spi_send_fiber, 0, 0, 7, 0);
