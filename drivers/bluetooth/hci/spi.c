@@ -31,7 +31,6 @@
 #include <misc/util.h>
 #include <misc/byteorder.h>
 #include <misc/stack.h>
-#include <misc/nano_work.h>
 #include <string.h>
 
 #include <bluetooth/bluetooth.h>

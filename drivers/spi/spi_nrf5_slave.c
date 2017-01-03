@@ -18,7 +18,6 @@
 
 #define SYS_LOG_LEVEL CONFIG_SYS_LOG_SPI_LEVEL
 
-#include <nanokernel.h>
 #include <device.h>
 #include <errno.h>
 
