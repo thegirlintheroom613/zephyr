@@ -16,7 +16,6 @@
 
 /* Program to grab raw HCI frames to send over SPI */
 
-#include <nanokernel.h>
 #include <stdio.h>
 
 /* Default SYS LOG DEBUG LEVEL */
