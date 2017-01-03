@@ -86,9 +86,9 @@
 static BT_STACK_NOINIT(spi_send_thread_stack, 256);
 static BT_STACK_NOINIT(spi_recv_thread_stack, 256);
 
-struct nano_sem nano_sem_req;
-struct nano_sem nano_sem_rdy;
-struct nano_sem nano_sem_spi_active;
+struct k_sem sem_req;
+struct k_sem sem_rdy;
+struct k_sem sem_spi_active;
 
 static struct device *spi_dev;
 static struct device *gpio_dev;
@@ -154,13 +154,13 @@ static void _spi_show(struct spi_config *spi_conf)
 void gpio_slave_req(struct device *gpio, struct gpio_callback *cb,
 		    uint32_t pins)
 {
-	nano_isr_sem_give(&nano_sem_req);
+	k_sem_give(&sem_req);
 }
 
 void gpio_slave_rdy(struct device *gpio, struct gpio_callback *cb,
 		    uint32_t pins)
 {
-	nano_isr_sem_give(&nano_sem_rdy);
+	k_sem_give(&sem_rdy);
 }
 
 static inline int bt_spi_transceive(const void *tx_buf, uint32_t tx_buf_len,
@@ -169,7 +169,7 @@ static inline int bt_spi_transceive(const void *tx_buf, uint32_t tx_buf_len,
 	BT_DBG("");
 
 	/* Wait for the sem release */
-	nano_fiber_sem_take(&nano_sem_rdy, SPI_RDY_WAIT_TIMEOUT);
+	k_sem_take(&sem_rdy, SPI_RDY_WAIT_TIMEOUT);
 
 	/* Can't go too fast, otherwise might read invalid data from slave */
 	k_sleep(K_MSEC(20));
@@ -189,18 +189,18 @@ static void spi_recv_thread(void)
 	int ret;
 
 	while (1) {
-		nano_fiber_sem_take(&nano_sem_req, TICKS_UNLIMITED);
+		k_sem_take(&sem_req, K_FOREVER);
 		BT_DBG("SPI slave request to send buf");
 
 		/* Send empty header, announce we are ready to receive data */
-		nano_fiber_sem_take(&nano_sem_spi_active, TICKS_UNLIMITED);
+		k_sem_take(&sem_spi_active, K_FOREVER);
 		BT_DBG("header - empty, announce ready to receive");
 		memset(spi_tx_buf, 0, sizeof(spi_tx_buf));
 		ret = bt_spi_transceive(spi_tx_buf, sizeof(spi_tx_buf),
 					spi_rx_buf, sizeof(spi_rx_buf));
 		if (ret < 0) {
 			BT_ERR("SPI transceive error (empty header): %d", ret);
-			nano_fiber_sem_give(&nano_sem_spi_active);
+			k_sem_give(&sem_spi_active);
 			continue;
 		}
 
@@ -210,10 +210,10 @@ static void spi_recv_thread(void)
 					spi_rx_buf, sizeof(spi_rx_buf));
 		if (ret < 0) {
 			BT_ERR("SPI transceive error: %d", ret);
-			nano_fiber_sem_give(&nano_sem_spi_active);
+			k_sem_give(&sem_spi_active);
 			continue;
 		}
-		nano_fiber_sem_give(&nano_sem_spi_active);
+		k_sem_give(&sem_spi_active);
 
 		if (spi_rx_buf[0] == 0) {
 			BT_ERR("Received 0 buffers over SPI, invalid data");
@@ -274,7 +274,7 @@ static void spi_send_thread(void)
 
 	while (1) {
 		buf = net_buf_get_timeout(&bt_tx_queue, 0, TICKS_UNLIMITED);
-		nano_fiber_sem_take(&nano_sem_spi_active, TICKS_UNLIMITED);
+		k_sem_take(&sem_spi_active, K_FOREVER);
 
 		hexdump("<=", buf->data, buf->len);
 
@@ -298,7 +298,7 @@ static void spi_send_thread(void)
 			BT_ERR("SPI transceive error: %d", ret);
 		}
 send_done:
-		nano_fiber_sem_give(&nano_sem_spi_active);
+		k_sem_give(&sem_spi_active);
 		net_buf_unref(buf);
 		stack_analyze("SPI send thread", spi_send_thread_stack,
 					sizeof(spi_send_thread_stack));
@@ -339,10 +339,9 @@ static int spi_open(void)
 	gpio_pin_write(gpio_dev, GPIO_NRF51_RESET_PIN, 1);
 #endif
 
-	nano_sem_init(&nano_sem_req);
-	nano_sem_init(&nano_sem_rdy);
-	nano_sem_init(&nano_sem_spi_active);
-	nano_sem_give(&nano_sem_spi_active);
+	k_sem_init(&sem_req, 0, 1);
+	k_sem_init(&sem_rdy, 0, 1);
+	k_sem_init(&sem_spi_active, 1, 1);
 
 	k_thread_spawn(spi_send_thread_stack, sizeof(spi_send_thread_stack),
 			(k_thread_entry_t) spi_send_thread,

@@ -102,8 +102,8 @@ static struct spi_config btspi_config = {
 	.max_sys_freq = SPI_MAX_CLK_FREQ,
 };
 
-struct nano_sem nano_sem_rx_thread;
-struct nano_sem nano_sem_tx_thread;
+struct k_sem sem_rx_thread;
+struct k_sem sem_tx_thread;
 
 /* TODO: move to standard utils */
 static void hexdump(const char *str, const uint8_t *packet, size_t length)
@@ -186,7 +186,7 @@ static inline int bt_spi_tx(struct net_buf *buf)
 	gpio_pin_write(gpio_dev, GPIO_REQ_PIN, 0);
 
 	/* Wait until rx thread says we're good to go */
-	nano_fiber_sem_take(&nano_sem_tx_thread, TICKS_UNLIMITED);
+	k_sem_take(&sem_tx_thread, K_FOREVER);
 	SYS_LOG_DBG("took sem tx thread");
 
 	/* In case there are already more bufs in the queue, send more */
@@ -198,7 +198,7 @@ static inline int bt_spi_tx(struct net_buf *buf)
 		if (buf_extra->len > BT_MAX_BUF_SIZE) {
 			SYS_LOG_ERR("Buf larger than max buf size");
 			net_buf_unref(buf_extra);
-			nano_fiber_sem_give(&nano_sem_rx_thread);
+			k_sem_give(&sem_rx_thread);
 			return -EINVAL;
 		}
 		hexdump("<", buf_extra->data, buf_extra->len);
@@ -220,7 +220,7 @@ static inline int bt_spi_tx(struct net_buf *buf)
 	}
 
 	SYS_LOG_DBG("sem give tx thread");
-	nano_fiber_sem_give(&nano_sem_rx_thread);
+	k_sem_give(&sem_rx_thread);
 
 	return ret;
 }
@@ -251,10 +251,9 @@ static void bt_spi_rx_thread(void)
 		if (spi_buf_len == 0) {
 			/* Let the tx task to do its job and wait */
 			SYS_LOG_DBG("sem give tx thread");
-			nano_fiber_sem_give(&nano_sem_tx_thread);
+			k_sem_give(&sem_tx_thread);
 			SYS_LOG_DBG("sem take rx thread, wait for tx thread");
-			nano_fiber_sem_take(&nano_sem_rx_thread,
-							TICKS_UNLIMITED);
+			k_sem_take(&sem_rx_thread, K_FOREVER);
 			continue;
 		}
 
@@ -336,8 +335,8 @@ void main(void)
 	net_buf_pool_init(tx_pool);
 	net_buf_pool_init(acl_tx_pool);
 
-	nano_sem_init(&nano_sem_rx_thread);
-	nano_sem_init(&nano_sem_tx_thread);
+	k_sem_init(&sem_rx_thread, 0, 1);
+	k_sem_init(&sem_tx_thread, 0, 1);
 
 	/* Tx/Rx threads */
 	k_thread_spawn(bt_spi_rx_thread_stack, sizeof(bt_spi_rx_thread_stack),
