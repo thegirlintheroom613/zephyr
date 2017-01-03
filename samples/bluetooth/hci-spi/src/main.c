@@ -38,10 +38,10 @@
 #include <drivers/spi/spi_nrf5.h>
 #endif
 
-#define SPI_RX_FIBER_STACK_SIZE 1024
-#define SPI_TX_FIBER_STACK_SIZE 1024
-static char __stack bt_spi_rx_fiber_stack[SPI_RX_FIBER_STACK_SIZE];
-static char __stack bt_spi_tx_fiber_stack[SPI_TX_FIBER_STACK_SIZE];
+#define SPI_RX_THREAD_STACK_SIZE 1024
+#define SPI_TX_THREAD_STACK_SIZE 1024
+static char __stack bt_spi_rx_thread_stack[SPI_RX_THREAD_STACK_SIZE];
+static char __stack bt_spi_tx_thread_stack[SPI_TX_THREAD_STACK_SIZE];
 
 static struct device *spi_dev;
 static struct device *gpio_dev;
@@ -102,8 +102,8 @@ static struct spi_config btspi_config = {
 	.max_sys_freq = SPI_MAX_CLK_FREQ,
 };
 
-struct nano_sem nano_sem_rx_fiber;
-struct nano_sem nano_sem_tx_fiber;
+struct nano_sem nano_sem_rx_thread;
+struct nano_sem nano_sem_tx_thread;
 
 /* TODO: move to standard utils */
 static void hexdump(const char *str, const uint8_t *packet, size_t length)
@@ -185,9 +185,9 @@ static inline int bt_spi_tx(struct net_buf *buf)
 	gpio_pin_write(gpio_dev, GPIO_REQ_PIN, 1);
 	gpio_pin_write(gpio_dev, GPIO_REQ_PIN, 0);
 
-	/* Wait until rx fiber says we're good to go */
-	nano_fiber_sem_take(&nano_sem_tx_fiber, TICKS_UNLIMITED);
-	SYS_LOG_DBG("took sem tx fiber");
+	/* Wait until rx thread says we're good to go */
+	nano_fiber_sem_take(&nano_sem_tx_thread, TICKS_UNLIMITED);
+	SYS_LOG_DBG("took sem tx thread");
 
 	/* In case there are already more bufs in the queue, send more */
 	while (remaining >= BT_MAX_BUF_SIZE + 2) {
@@ -198,7 +198,7 @@ static inline int bt_spi_tx(struct net_buf *buf)
 		if (buf_extra->len > BT_MAX_BUF_SIZE) {
 			SYS_LOG_ERR("Buf larger than max buf size");
 			net_buf_unref(buf_extra);
-			nano_fiber_sem_give(&nano_sem_rx_fiber);
+			nano_fiber_sem_give(&nano_sem_rx_thread);
 			return -EINVAL;
 		}
 		hexdump("<", buf_extra->data, buf_extra->len);
@@ -219,14 +219,14 @@ static inline int bt_spi_tx(struct net_buf *buf)
 		SYS_LOG_ERR("SPI transceive error: %d", ret);
 	}
 
-	SYS_LOG_DBG("sem give tx fiber");
-	nano_fiber_sem_give(&nano_sem_rx_fiber);
+	SYS_LOG_DBG("sem give tx thread");
+	nano_fiber_sem_give(&nano_sem_rx_thread);
 
 	return ret;
 }
 
-/* Fiber responsible for receiving data from master */
-static void bt_spi_rx_fiber(void)
+/* Thread responsible for receiving data from master */
+static void bt_spi_rx_thread(void)
 {
 	uint8_t spi_rx_buf[SPI_MAX_BUF_SIZE];
 	uint8_t spi_tx_buf[2] = { 0 };
@@ -235,7 +235,7 @@ static void bt_spi_rx_fiber(void)
 	struct net_buf *buf;
 	int ret;
 
-	SYS_LOG_DBG("Starting bt_spi_rx_fiber");
+	SYS_LOG_DBG("Starting bt_spi_rx_thread");
 
 	while (1) {
 		memset(&spi_rx_buf, 0, sizeof(spi_rx_buf));
@@ -250,10 +250,10 @@ static void bt_spi_rx_fiber(void)
 
 		if (spi_buf_len == 0) {
 			/* Let the tx task to do its job and wait */
-			SYS_LOG_DBG("sem give tx fiber");
-			nano_fiber_sem_give(&nano_sem_tx_fiber);
-			SYS_LOG_DBG("sem take rx fiber, wait for tx fiber");
-			nano_fiber_sem_take(&nano_sem_rx_fiber,
+			SYS_LOG_DBG("sem give tx thread");
+			nano_fiber_sem_give(&nano_sem_tx_thread);
+			SYS_LOG_DBG("sem take rx thread, wait for tx thread");
+			nano_fiber_sem_take(&nano_sem_rx_thread,
 							TICKS_UNLIMITED);
 			continue;
 		}
@@ -293,7 +293,7 @@ static void bt_spi_rx_fiber(void)
 	}
 }
 
-static void bt_spi_tx_fiber(void)
+static void bt_spi_tx_thread(void)
 {
 	struct net_buf *buf;
 
@@ -336,14 +336,16 @@ void main(void)
 	net_buf_pool_init(tx_pool);
 	net_buf_pool_init(acl_tx_pool);
 
-	nano_sem_init(&nano_sem_rx_fiber);
-	nano_sem_init(&nano_sem_tx_fiber);
+	nano_sem_init(&nano_sem_rx_thread);
+	nano_sem_init(&nano_sem_tx_thread);
 
-	/* Tx/Rx fibers */
-	fiber_start(bt_spi_rx_fiber_stack, sizeof(bt_spi_rx_fiber_stack),
-			(nano_fiber_entry_t) bt_spi_rx_fiber, 0, 0, 7, 0);
-	fiber_start(bt_spi_tx_fiber_stack, sizeof(bt_spi_tx_fiber_stack),
-			(nano_fiber_entry_t) bt_spi_tx_fiber, 0, 0, 7, 0);
+	/* Tx/Rx threads */
+	k_thread_spawn(bt_spi_rx_thread_stack, sizeof(bt_spi_rx_thread_stack),
+			(k_thread_entry_t) bt_spi_rx_thread,
+			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	k_thread_spawn(bt_spi_tx_thread_stack, sizeof(bt_spi_tx_thread_stack),
+			(k_thread_entry_t) bt_spi_tx_thread,
+			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	bt_enable_raw(&rx_queue);
 

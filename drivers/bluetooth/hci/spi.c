@@ -83,8 +83,8 @@
 
 #define SPI_RDY_WAIT_TIMEOUT	1000
 
-static BT_STACK_NOINIT(spi_send_fiber_stack, 256);
-static BT_STACK_NOINIT(spi_recv_fiber_stack, 256);
+static BT_STACK_NOINIT(spi_send_thread_stack, 256);
+static BT_STACK_NOINIT(spi_recv_thread_stack, 256);
 
 struct nano_sem nano_sem_req;
 struct nano_sem nano_sem_rdy;
@@ -176,7 +176,7 @@ static inline int bt_spi_transceive(const void *tx_buf, uint32_t tx_buf_len,
 	return spi_transceive(spi_dev, tx_buf, tx_buf_len, rx_buf, rx_buf_len);
 }
 
-static void spi_recv_fiber(void)
+static void spi_recv_thread(void)
 {
 	BT_DBG("");
 
@@ -258,12 +258,12 @@ static void spi_recv_fiber(void)
 			buf = NULL;
 		}
 
-		stack_analyze("SPI recv fiber", spi_recv_fiber_stack,
-					sizeof(spi_recv_fiber_stack));
+		stack_analyze("SPI recv thread", spi_recv_thread_stack,
+					sizeof(spi_recv_thread_stack));
 	}
 }
 
-static void spi_send_fiber(void)
+static void spi_send_thread(void)
 {
 	uint8_t spi_tx_buf[SPI_MAX_BUF_SIZE];
 	uint8_t spi_rx_buf[2];
@@ -300,8 +300,8 @@ static void spi_send_fiber(void)
 send_done:
 		nano_fiber_sem_give(&nano_sem_spi_active);
 		net_buf_unref(buf);
-		stack_analyze("SPI send fiber", spi_send_fiber_stack,
-					sizeof(spi_send_fiber_stack));
+		stack_analyze("SPI send thread", spi_send_thread_stack,
+					sizeof(spi_send_thread_stack));
 	}
 }
 
@@ -344,11 +344,13 @@ static int spi_open(void)
 	nano_sem_init(&nano_sem_spi_active);
 	nano_sem_give(&nano_sem_spi_active);
 
-	fiber_start(spi_send_fiber_stack, sizeof(spi_send_fiber_stack),
-			(nano_fiber_entry_t) spi_send_fiber, 0, 0, 7, 0);
+	k_thread_spawn(spi_send_thread_stack, sizeof(spi_send_thread_stack),
+			(k_thread_entry_t) spi_send_thread,
+			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
-	fiber_start(spi_recv_fiber_stack, sizeof(spi_recv_fiber_stack),
-			(nano_fiber_entry_t) spi_recv_fiber, 0, 0, 7, 0);
+	k_thread_spawn(spi_recv_thread_stack, sizeof(spi_recv_thread_stack),
+			(k_thread_entry_t) spi_recv_thread,
+			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 	return 0;
 }
