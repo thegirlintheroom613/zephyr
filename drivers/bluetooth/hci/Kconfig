@@ -89,7 +89,7 @@ config BLUETOOTH_UART_ON_DEV_NAME
 config BLUETOOTH_SPI_ON_DEV_NAME
 	string "Device Name of SPI Device for Bluetooth"
 	default "SPI_0"
-	depends on BLUETOOTH_SPI || BLUETOOTH_STACK_HCI_RAW
+	depends on BLUETOOTH_SPI || BLUETOOTH_HCI_RAW
 	help
 	  This option specifies the name of SPI device to be used for Bluetooth.
 	  On the controller side, this SPI device is used to encapsulate the
