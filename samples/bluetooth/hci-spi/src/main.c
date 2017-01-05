@@ -21,7 +21,7 @@
 
 /* Default SYS LOG DEBUG LEVEL */
 #define SYS_LOG_LEVEL SYS_LOG_LEVEL_ERROR
-#include <misc/sys_log.h>
+#include <logging/sys_log.h>
 #include <misc/printk.h>
 
 #include <errno.h>
