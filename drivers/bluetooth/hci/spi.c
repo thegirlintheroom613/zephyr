@@ -186,6 +186,7 @@ static void spi_recv_thread(void)
 	uint8_t bt_buf_type;
 	uint8_t *offset;
 	struct net_buf *buf;
+	struct bt_hci_evt_hdr *hdr;
 	int ret;
 
 	while (1) {
@@ -254,7 +255,11 @@ static void spi_recv_thread(void)
 			bt_buf_set_type(buf, bt_buf_type);
 			memcpy(net_buf_add(buf, buf_len), offset, buf_len);
 			hexdump("=>", buf->data, buf->len);
-			bt_recv(buf);
+			hdr = (void *)buf->data;
+			if (hdr && bt_hci_evt_is_prio(hdr->evt))
+				bt_recv_prio(buf);
+			else
+				bt_recv(buf);
 			offset += buf_len;
 			buf = NULL;
 		}
