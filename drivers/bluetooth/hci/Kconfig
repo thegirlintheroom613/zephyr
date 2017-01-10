@@ -56,7 +56,6 @@ config BLUETOOTH_SPI_TRANSPORT
 	bool "SPI transport for Bluetooth"
 	select SPI
 	select BLUETOOTH_SPI
-	select BLUETOOTH_HOST_BUFFERS
 	help
 	  Bluetooth SPI driver. Requires additional 2 gpio pins for
 	  communication with the slave (request and ready).
