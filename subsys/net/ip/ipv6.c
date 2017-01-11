@@ -670,16 +670,10 @@ static inline void handle_ns_neighbor(struct net_buf *buf,
 				      struct net_icmpv6_nd_opt_hdr *hdr)
 {
 	struct net_nbr *nbr;
-	struct net_linkaddr lladdr = {
-		.len = 8 * hdr->len - 2,
-		.addr = (uint8_t *)hdr + 2,
-	};
+	struct net_linkaddr lladdr;
 
-	/**
-	 * IEEE802154 lladdress is 8 bytes long, so it requires
-	 * 2 * 8 bytes - 2 - padding.
-	 * The formula above needs to be adjusted.
-	 */
+	lladdr.addr = net_nbuf_ll_src(buf)->addr;
+	lladdr.len = NET_LINK_ADDR_MAX_LENGTH;
 	if (net_nbuf_ll_src(buf)->len < lladdr.len) {
 		lladdr.len = net_nbuf_ll_src(buf)->len;
 	}
