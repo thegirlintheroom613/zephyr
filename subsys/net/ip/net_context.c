@@ -738,7 +738,7 @@ static enum net_verdict tcp_established(struct net_conn *conn,
 					void *user_data)
 {
 	struct net_context *context = (struct net_context *)user_data;
-	enum net_verdict ret;
+	enum net_verdict ret = NET_DROP;
 	uint8_t tcp_flags;
 
 	NET_ASSERT(context && context->tcp);
@@ -785,10 +785,14 @@ static enum net_verdict tcp_established(struct net_conn *conn,
 			return NET_DROP;
 		}
 
-		set_appdata_values(buf, IPPROTO_TCP, net_buf_frags_len(buf));
-		context->tcp->send_ack += net_nbuf_appdatalen(buf);
+		/* skip ACK header processing */
+		if (tcp_flags != NET_TCP_ACK) {
+			set_appdata_values(buf, IPPROTO_TCP,
+					   net_buf_frags_len(buf));
+			context->tcp->send_ack += net_nbuf_appdatalen(buf);
 
-		ret = packet_received(conn, buf, user_data);
+			ret = packet_received(conn, buf, user_data);
+		}
 	}
 
 	send_ack(context, &conn->remote_addr);
