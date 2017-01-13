@@ -82,8 +82,8 @@
 
 #define SPI_RDY_WAIT_TIMEOUT	K_MSEC(1000)
 
-static BT_STACK_NOINIT(spi_send_thread_stack, 256);
-static BT_STACK_NOINIT(spi_recv_thread_stack, 256);
+static BT_STACK_NOINIT(spi_send_thread_stack, 1024);
+static BT_STACK_NOINIT(spi_recv_thread_stack, 1024);
 
 struct k_sem sem_req;
 struct k_sem sem_rdy;
