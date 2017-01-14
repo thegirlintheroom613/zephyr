@@ -192,7 +192,7 @@ static int hawkbit_install_update(struct net_context *context,
 	struct http_parser parser;
 	struct net_buf *recv_buf;
 	int downloaded_size = 0;
-	int ret, len;
+	int ret, recv_len, buf_len = 0;
 
 	if (!tcp_buf || !download_http || !file_size) {
 		return -EINVAL;
@@ -203,11 +203,6 @@ static int hawkbit_install_update(struct net_context *context,
 					FLASH_BANK1_OFFSET, FLASH_BANK_SIZE);
 		return -EIO;
 	}
-
-	http_parser_init(&parser, HTTP_RESPONSE);
-	http_parser_settings_init(&http_settings);
-	http_settings.on_headers_complete = handle_headers_complete_download;
-	parser.data = &http_data;
 
 	OTA_INFO("Starting the download and flash process\n");
 
@@ -225,24 +220,43 @@ static int hawkbit_install_update(struct net_context *context,
 		return ret;
 	}
 
-	/* Receive is special for download, since it writes to flash */
+	http_parser_settings_init(&http_settings);
+	http_settings.on_headers_complete = handle_headers_complete_download;
 	memset(tcp_buf, 0, BUF_SIZE);
-	recv_buf = net_receive(context, TCP_RX_TIMEOUT);
-	if (!recv_buf) {
-		OTA_ERR("Unable to start the download process\n");
-		return -1;
-	}
-	len = ip_buf_appdatalen(recv_buf);
-	memcpy(tcp_buf, ip_buf_appdata(recv_buf), len);
-	ip_buf_unref(recv_buf);
 
-	/* Parse the HTTP headers available from the first buffer */
-	http_parser_execute(&parser, &http_settings,
+	/* Loop receive until a valid header is available. */
+	while (true) {
+		recv_buf = net_receive(context, TCP_RX_TIMEOUT);
+		if (!recv_buf) {
+			OTA_ERR("Unable to start the download process\n");
+			return -1;
+		}
+		recv_len = ip_buf_appdatalen(recv_buf);
+		if (recv_len + buf_len >= BUF_SIZE) {
+			OTA_ERR("Header larger than available BUF_SIZE.\n");
+			return -1;
+		}
+		memcpy(tcp_buf + buf_len, ip_buf_appdata(recv_buf), recv_len);
+		buf_len += recv_len;
+		ip_buf_unref(recv_buf);
+
+		/* Parse the HTTP headers available from the first buffer */
+		http_parser_init(&parser, HTTP_RESPONSE);
+		parser.data = &http_data;
+		http_parser_execute(&parser, &http_settings,
 				(const char *) tcp_buf, BUF_SIZE);
-	if (parser.status_code != 200) {
-		OTA_ERR("Download: http error %d\n", parser.status_code);
-		return -1;
+		if (parser.status_code != 200) {
+			OTA_ERR("Download: http error %d\n", parser.status_code);
+			return -1;
+		}
+		if (http_data.content_length > 0 ||
+				parser.http_errno != HPE_INVALID_HEADER_TOKEN) {
+			/* Assume a valid header at this stage */
+			break;
+		}
 	}
+
+	/* Validate that the reported length matches the expected file size */
 	if (http_data.content_length != file_size) {
 		OTA_ERR("Download: file size not the same as reported, "
 				"found %d, expecting %d\n",
@@ -253,12 +267,12 @@ static int hawkbit_install_update(struct net_context *context,
 	/* Everything looks good, so fetch and flash */
 	flash_write_protection_set(flash_dev, false);
 
-	if (len > http_data.header_size) {
-		len -= http_data.header_size;
+	if (buf_len > http_data.header_size) {
+		buf_len -= http_data.header_size;
 		flash_write(flash_dev, FLASH_BANK1_OFFSET,
 				tcp_buf + http_data.header_size,
-				len);
-		downloaded_size += len;
+				buf_len);
+		downloaded_size += buf_len;
 	}
 
 	while (true) {
@@ -266,12 +280,12 @@ static int hawkbit_install_update(struct net_context *context,
 		if (!recv_buf) {
 			break;
 		}
-		len = ip_buf_appdatalen(recv_buf);
-		memcpy(tcp_buf, ip_buf_appdata(recv_buf), len);
+		recv_len = ip_buf_appdatalen(recv_buf);
+		memcpy(tcp_buf, ip_buf_appdata(recv_buf), recv_len);
 		ip_buf_unref(recv_buf);
 		flash_write(flash_dev, FLASH_BANK1_OFFSET + downloaded_size,
-							tcp_buf, len);
-		downloaded_size += len;
+							tcp_buf, recv_len);
+		downloaded_size += recv_len;
 	}
 	flash_write_protection_set(flash_dev, true);
 
