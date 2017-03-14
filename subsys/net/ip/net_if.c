@@ -176,10 +176,6 @@ static int net_if_prepare_events(void)
 	int ev_count = 0;
 
 	for (iface = __net_if_start; iface != __net_if_end; iface++) {
-		if (!atomic_test_bit(iface->flags, NET_IF_UP)) {
-			continue;
-		}
-
 		k_poll_event_init(&__net_if_event_start[ev_count],
 				  K_POLL_TYPE_FIFO_DATA_AVAILABLE,
 				  K_POLL_MODE_NOTIFY_ONLY,
@@ -190,10 +186,13 @@ static int net_if_prepare_events(void)
 	return ev_count;
 }
 
-static void net_if_tx_thread(void)
+static void net_if_tx_thread(struct k_sem *startup_sync)
 {
 	NET_DBG("Starting TX thread (stack %d bytes)",
 		CONFIG_NET_TX_STACK_SIZE);
+
+	/* This will allow RX thread to start to receive data. */
+	k_sem_give(startup_sync);
 
 	while (1) {
 		int ev_count;
@@ -219,9 +218,6 @@ static inline void init_iface(struct net_if *iface)
 	k_fifo_init(&iface->tx_queue);
 
 	api->init(iface);
-
-	/* Attempt to bring the interface up */
-	net_if_up(iface);
 }
 
 enum net_verdict net_if_send_data(struct net_if *iface, struct net_buf *buf)
@@ -910,6 +906,8 @@ void net_if_ipv6_prefix_set_timer(struct net_if_ipv6_prefix *prefix,
 	}
 
 	NET_DBG("Prefix lifetime %u ms", timeout);
+
+	net_if_ipv6_prefix_unset_timer(prefix);
 
 	k_delayed_work_init(&prefix->lifetime, prefix_lf_timeout);
 	k_delayed_work_submit(&prefix->lifetime, timeout);
@@ -1600,7 +1598,7 @@ done:
 	return 0;
 }
 
-void net_if_init(void)
+void net_if_init(struct k_sem *startup_sync)
 {
 	struct net_if *iface;
 
@@ -1623,8 +1621,20 @@ void net_if_init(void)
 
 	k_thread_spawn(tx_stack, sizeof(tx_stack),
 		       (k_thread_entry_t)net_if_tx_thread,
-		       NULL, NULL, NULL, K_PRIO_COOP(7),
+		       startup_sync, NULL, NULL, K_PRIO_COOP(7),
 		       K_ESSENTIAL, K_NO_WAIT);
+}
+
+void net_if_post_init(void)
+{
+	struct net_if *iface;
+
+	NET_DBG("");
+
+	/* After TX is running, attempt to bring the interface up */
+	for (iface = __net_if_start; iface != __net_if_end; iface++) {
+		net_if_up(iface);
+	}
 
 	/* RPL init must be done after the network interface is up
 	 * as the RPL code wants to add multicast address to interface.

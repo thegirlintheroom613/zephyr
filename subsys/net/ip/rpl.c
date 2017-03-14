@@ -552,7 +552,11 @@ int net_rpl_dio_send(struct net_if *iface,
 			dag->prefix_info.length);
 	}
 
-	buf = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	ret = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	if (ret < 0) {
+		net_nbuf_unref(buf);
+		return ret;
+	}
 
 	ret = net_send_data(buf);
 	if (ret >= 0) {
@@ -622,7 +626,7 @@ static void dio_timer(struct k_work *work)
 		}
 		instance->dio_send = false;
 
-		NET_DBG("Next DIO send after %lu ms",
+		NET_DBG("Next DIO send after %d ms",
 			instance->dio_next_delay);
 
 		k_delayed_work_submit(&instance->dio_timer,
@@ -748,7 +752,11 @@ int net_rpl_dis_send(struct in6_addr *dst, struct net_if *iface)
 			  &pos, 0);
 	net_nbuf_write_u8(buf, buf->frags, pos, &pos, 0);
 
-	buf = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	ret = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	if (ret < 0) {
+		net_nbuf_unref(buf);
+		return ret;
+	}
 
 	ret = net_send_data(buf);
 	if (ret >= 0) {
@@ -940,7 +948,7 @@ static void net_rpl_schedule_probing(struct net_rpl_instance *instance)
 		      sys_rand32_get() % NET_RPL_PROBING_INTERVAL) *
 		MSEC_PER_SEC;
 
-	NET_DBG("Send probe in %lu ms, instance %p (%d)",
+	NET_DBG("Send probe in %d ms, instance %p (%d)",
 		expiration, instance, instance->instance_id);
 
 	k_delayed_work_init(&instance->probing_timer, rpl_probing_timer);
@@ -3012,7 +3020,11 @@ int net_rpl_dao_send(struct net_if *iface,
 	net_nbuf_append_u8(buf, 0); /* path seq */
 	net_nbuf_append_u8(buf, lifetime);
 
-	buf = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	ret = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	if (ret < 0) {
+		net_nbuf_unref(buf);
+		return ret;
+	}
 
 	ret = net_send_data(buf);
 	if (ret >= 0) {
@@ -3106,7 +3118,11 @@ static int dao_ack_send(struct net_buf *orig,
 	net_nbuf_append_u8(buf, sequence);
 	net_nbuf_append_u8(buf, 0); /* status */
 
-	buf = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	ret = net_ipv6_finalize_raw(buf, IPPROTO_ICMPV6);
+	if (ret < 0) {
+		net_nbuf_unref(buf);
+		return ret;
+	}
 
 	ret = net_send_data(buf);
 	if (ret >= 0) {
@@ -3535,27 +3551,29 @@ int net_rpl_update_header(struct net_buf *buf, struct in6_addr *addr)
 	return 0;
 }
 
-bool net_rpl_verify_header(struct net_buf *buf,
-			   uint16_t offset, uint16_t *pos)
+struct net_buf *net_rpl_verify_header(struct net_buf *buf, struct net_buf *frag,
+				      uint16_t offset, uint16_t *pos,
+				      bool *result)
 {
 	struct net_rpl_instance *instance;
-	struct net_buf *frag;
 	uint16_t sender_rank;
 	uint8_t instance_id, flags;
 	bool down, sender_closer;
 
-	frag = net_nbuf_read_u8(buf, offset, pos, &flags);
+	frag = net_nbuf_read_u8(frag, offset, pos, &flags);
 	frag = net_nbuf_read_u8(frag, *pos, pos, &instance_id);
 	frag = net_nbuf_read_be16(frag, *pos, pos, &sender_rank);
 
 	if (!frag && *pos == 0xffff) {
-		return false;
+		*result = false;
+		return frag;
 	}
 
 	instance = net_rpl_get_instance(instance_id);
 	if (!instance) {
 		NET_DBG("Unknown instance %u", instance_id);
-		return false;
+		*result = false;
+		return frag;
 	}
 
 	if (flags & NET_RPL_HDR_OPT_FWD_ERR) {
@@ -3580,12 +3598,14 @@ bool net_rpl_verify_header(struct net_buf *buf,
 		net_rpl_reset_dio_timer(instance);
 
 		/* drop the packet as it is not routable */
-		return false;
+		*result = false;
+		return frag;
 	}
 
 	if (!net_rpl_dag_is_joined(instance->current_dag)) {
 		NET_DBG("No DAG in the instance");
-		return false;
+		*result = false;
+		return frag;
 	}
 
 	if (flags & NET_RPL_HDR_OPT_DOWN) {
@@ -3617,20 +3637,22 @@ bool net_rpl_verify_header(struct net_buf *buf,
 			 */
 			net_rpl_reset_dio_timer(instance);
 
-			return false;
+			*result = false;
+			return frag;
 		}
 
 		NET_DBG("Single error tolerated.");
 		net_stats_update_rpl_loop_warnings();
 
-		net_nbuf_write_u8(buf, buf->frags, offset, pos,
-				  flags | NET_RPL_HDR_OPT_RANK_ERR);
-
-		return true;
+		/* FIXME: Handle (NET_RPL_HDR_OPT_RANK_ERR) errors properly */
+		*result = true;
+		return frag;
 	}
 
 	NET_DBG("Rank OK");
-	return true;
+
+	*result = true;
+	return frag;
 }
 
 static inline int add_rpl_opt(struct net_buf *buf, uint16_t offset)
@@ -3847,6 +3869,63 @@ static int net_rpl_update_header_empty(struct net_buf *buf)
 	return 0;
 }
 
+int net_rpl_revert_header(struct net_buf *buf, uint16_t offset, uint16_t *pos)
+{
+	struct net_rpl_instance *instance;
+	struct net_buf *frag;
+	uint16_t sender_rank;
+	uint16_t revert_pos;
+	uint8_t instance_id;
+	uint8_t opt_len;
+	uint8_t flags;
+	uint8_t opt;
+
+	/* Skip HBHO next header and length */
+	frag = net_nbuf_skip(buf->frags, offset, pos, 2);
+	frag = net_nbuf_read_u8(frag, *pos, pos, &opt);
+	frag = net_nbuf_read_u8(frag, *pos, pos, &opt_len);
+
+	if (opt != NET_IPV6_EXT_HDR_OPT_RPL) {
+		return -EINVAL;
+	}
+
+	revert_pos = *pos;
+	frag = net_nbuf_read_u8(frag, *pos, pos, &flags);
+	frag = net_nbuf_read_u8(frag, *pos, pos, &instance_id);
+	if (!frag && *pos == 0xffff) {
+		return -EINVAL;
+	}
+
+	instance = net_rpl_get_instance(instance_id);
+	if (!instance) {
+		NET_DBG("Unknown instance %u", instance_id);
+		return -EINVAL;
+	}
+
+	if (!instance->current_dag) {
+		NET_DBG("Current DAG not available");
+		return -EINVAL;
+	}
+
+	flags &= NET_RPL_HDR_OPT_DOWN;
+	flags ^= NET_RPL_HDR_OPT_DOWN;
+
+	sender_rank = instance->current_dag->rank;
+
+	/* Reverting RPL options from 'revert_pos' */
+	*pos = revert_pos;
+
+	/* Update flags, instance id, sender rank */
+	frag = net_nbuf_write_u8(buf, frag, *pos, pos, flags);
+	frag = net_nbuf_write_u8(buf, frag, *pos, pos, instance_id);
+	frag = net_nbuf_write_be16(buf, frag, *pos, pos, sender_rank);
+	if (!frag && *pos == 0xffff) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int net_rpl_insert_header(struct net_buf *buf)
 {
 #if defined(CONFIG_NET_RPL_INSERT_HBH_OPTION)
@@ -3893,6 +3972,11 @@ static inline void net_rpl_init_timers(void)
 	k_delayed_work_init(&dis_timer, dis_timeout);
 	k_delayed_work_submit(&dis_timer, dis_interval);
 #endif
+}
+
+struct net_rpl_instance *net_rpl_get_default_instance(void)
+{
+	return rpl_default_instance;
 }
 
 void net_rpl_init(void)
