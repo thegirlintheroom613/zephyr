@@ -14,10 +14,12 @@
 #define NXP_MPU_REGION_NUMBER 12
 
 /* Read Attribute */
-#define MPU_REGION_READ  ((1 << 2) | (1 << 8) | (1 << 14))
+#define MPU_REGION_READ  ((1 << 2) | (1 << 8) | (1 << 14) | \
+			  (1 << 18) | (1 << 19) | (1 << 20))
 
 /* Write Attribute */
-#define MPU_REGION_WRITE ((1 << 1) | (1 << 7) | (1 << 13))
+#define MPU_REGION_WRITE ((1 << 1) | (1 << 7) | (1 << 13) | \
+			  (1 << 18) | (1 << 19) | (1 << 20))
 
 /* Execute Attribute */
 #define MPU_REGION_EXEC  ((1 << 0) | (1 << 6) | (1 << 12))
