@@ -337,6 +337,12 @@ static inline void net_shell_print_statistics(void)
 	       GET_STAT(ipv6_nd.sent),
 	       GET_STAT(ipv6_nd.drop));
 #endif /* CONFIG_NET_IPV6_ND */
+#if defined(CONFIG_NET_STATISTICS_MLD)
+	printk("IPv6 MLD recv  %d\tsent\t%d\tdrop\t%d\n",
+	       GET_STAT(ipv6_mld.recv),
+	       GET_STAT(ipv6_mld.sent),
+	       GET_STAT(ipv6_mld.drop));
+#endif /* CONFIG_NET_STATISTICS_MLD */
 #endif /* CONFIG_NET_IPV6 */
 
 #if defined(CONFIG_NET_IPV4)
@@ -371,6 +377,27 @@ static inline void net_shell_print_statistics(void)
 	       GET_STAT(udp.drop));
 	printk("UDP chkerr     %d\n",
 	       GET_STAT(udp.chkerr));
+#endif
+
+#if defined(CONFIG_NET_STATISTICS_TCP)
+	printk("TCP bytes recv %u\tsent\t%d\n",
+	       GET_STAT(tcp.bytes.received),
+	       GET_STAT(tcp.bytes.sent));
+	printk("TCP seg recv   %d\tsent\t%d\tdrop\t%d\n",
+	       GET_STAT(tcp.recv),
+	       GET_STAT(tcp.sent),
+	       GET_STAT(tcp.drop));
+	printk("TCP seg resent %d\tchkerr\t%d\tackerr\t%d\n",
+	       GET_STAT(tcp.resent),
+	       GET_STAT(tcp.chkerr),
+	       GET_STAT(tcp.ackerr));
+	printk("TCP seg rsterr %d\trst\t%d\tre-xmit\t%d\n",
+	       GET_STAT(tcp.rsterr),
+	       GET_STAT(tcp.rst),
+	       GET_STAT(tcp.rexmit));
+	printk("TCP conn drop  %d\tconnrst\t%d\n",
+	       GET_STAT(tcp.conndrop),
+	       GET_STAT(tcp.connrst));
 #endif
 
 #if defined(CONFIG_NET_STATISTICS_RPL)
@@ -1302,7 +1329,7 @@ extern char _interrupt_stack[];
 int net_shell_cmd_stacks(int argc, char *argv[])
 {
 #if defined(CONFIG_INIT_STACKS)
-	unsigned int stack_offset, pcnt, unused;
+	unsigned int pcnt, unused;
 #endif
 	struct net_stack_info *info;
 
@@ -1311,13 +1338,13 @@ int net_shell_cmd_stacks(int argc, char *argv[])
 
 	for (info = __net_stack_start; info != __net_stack_end; info++) {
 		net_analyze_stack_get_values(info->stack, info->size,
-					     &stack_offset, &pcnt, &unused);
+					     &pcnt, &unused);
 
 #if defined(CONFIG_INIT_STACKS)
 		printk("%s [%s] stack size %zu/%zu bytes unused %u usage"
 		       " %zu/%zu (%u %%)\n",
 		       info->pretty_name, info->name, info->orig_size,
-		       info->size + stack_offset, unused,
+		       info->size, unused,
 		       info->size - unused, info->size, pcnt);
 #else
 		printk("%s [%s] stack size %zu usage not available\n",
@@ -1327,19 +1354,19 @@ int net_shell_cmd_stacks(int argc, char *argv[])
 
 #if defined(CONFIG_INIT_STACKS)
 	net_analyze_stack_get_values(_main_stack, CONFIG_MAIN_STACK_SIZE,
-				     &stack_offset, &pcnt, &unused);
+				     &pcnt, &unused);
 	printk("%s [%s] stack size %d/%d bytes unused %u usage"
 	       " %d/%d (%u %%)\n",
 	       "main", "_main_stack", CONFIG_MAIN_STACK_SIZE,
-	       CONFIG_MAIN_STACK_SIZE + stack_offset, unused,
+	       CONFIG_MAIN_STACK_SIZE, unused,
 	       CONFIG_MAIN_STACK_SIZE - unused, CONFIG_MAIN_STACK_SIZE, pcnt);
 
 	net_analyze_stack_get_values(_interrupt_stack, CONFIG_ISR_STACK_SIZE,
-				     &stack_offset, &pcnt, &unused);
+				     &pcnt, &unused);
 	printk("%s [%s] stack size %d/%d bytes unused %u usage"
 	       " %d/%d (%u %%)\n",
 	       "ISR", "_interrupt_stack", CONFIG_ISR_STACK_SIZE,
-	       CONFIG_ISR_STACK_SIZE + stack_offset, unused,
+	       CONFIG_ISR_STACK_SIZE, unused,
 	       CONFIG_ISR_STACK_SIZE - unused, CONFIG_ISR_STACK_SIZE, pcnt);
 #endif
 

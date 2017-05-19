@@ -32,8 +32,15 @@
 #include "ipv4.h"
 #include "udp.h"
 #include "tcp.h"
+#include "net_stats.h"
 
 #define NET_MAX_CONTEXT CONFIG_NET_MAX_CONTEXTS
+
+#if defined(CONFIG_NET_TCP_ACK_TIMEOUT)
+#define ACK_TIMEOUT CONFIG_NET_TCP_ACK_TIMEOUT
+#else
+#define ACK_TIMEOUT MSEC_PER_SEC
+#endif
 
 /* Declares a wrapper function for a net_conn callback that refs the
  * context around the invocation (to protect it from premature
@@ -734,8 +741,8 @@ static inline int send_syn_ack(struct net_context *context,
 				    "SYN_ACK");
 }
 
-static inline int send_ack(struct net_context *context,
-			   struct sockaddr *remote)
+static int send_ack(struct net_context *context,
+		    struct sockaddr *remote, bool force)
 {
 	struct net_pkt *pkt = NULL;
 	int ret;
@@ -743,7 +750,7 @@ static inline int send_ack(struct net_context *context,
 	/* Something (e.g. a data transmission under the user
 	 * callback) already sent the ACK, no need
 	 */
-	if (context->tcp->send_ack == context->tcp->sent_ack) {
+	if (!force && context->tcp->send_ack == context->tcp->sent_ack) {
 		return 0;
 	}
 
@@ -816,6 +823,44 @@ NET_CONN_CB(tcp_established)
 				     sys_get_be32(NET_TCP_HDR(pkt)->ack));
 	}
 
+	/*
+	 * If we receive RST here, we close the socket. See RFC 793 chapter
+	 * called "Reset Processing" for details.
+	 */
+	if (tcp_flags & NET_TCP_RST) {
+		/* We only accept RST packet that has valid seq field. */
+		if (!net_tcp_validate_seq(context->tcp, pkt)) {
+			net_stats_update_tcp_seg_rsterr();
+			return NET_DROP;
+		}
+
+		net_stats_update_tcp_seg_rst();
+
+		net_tcp_print_recv_info("RST", pkt, NET_TCP_HDR(pkt)->src_port);
+
+		if (context->recv_cb) {
+			context->recv_cb(context, NULL, -ECONNRESET,
+					 context->tcp->recv_user_data);
+		}
+
+		net_context_unref(context);
+
+		return NET_DROP;
+	}
+
+	if (net_tcp_seq_cmp(sys_get_be32(NET_TCP_HDR(pkt)->seq),
+			    context->tcp->send_ack) < 0) {
+		/* Peer sent us packet we've already seen. Apparently,
+		 * our ack was lost.
+		 */
+
+		/* RFC793 specifies that "highest" (i.e. current from our PoV)
+		 * ack # value can/should be sent, so we just force resend.
+		 */
+		send_ack(context, &conn->remote_addr, true);
+		return NET_DROP;
+	}
+
 	if (sys_get_be32(NET_TCP_HDR(pkt)->seq) - context->tcp->send_ack) {
 		/* Don't try to reorder packets.  If it doesn't
 		 * match the next segment exactly, drop and wait for
@@ -845,9 +890,17 @@ NET_CONN_CB(tcp_established)
 			context->recv_cb(context, NULL, 0,
 					 context->tcp->recv_user_data);
 		}
+
+		/* We should receive ACK next in order to get rid of LAST_ACK
+		 * state that we are entering in a short while. But we need to
+		 * be prepared to NOT to receive it as otherwise the connection
+		 * would be stuck forever.
+		 */
+		k_delayed_work_submit(&context->tcp->ack_timer, ACK_TIMEOUT);
+		context->tcp->ack_timer_cancelled = false;
 	}
 
-	send_ack(context, &conn->remote_addr);
+	send_ack(context, &conn->remote_addr, false);
 
 	if (sys_slist_is_empty(&context->tcp->sent_list)
 	    && context->tcp->fin_rcvd
@@ -881,6 +934,14 @@ NET_CONN_CB(tcp_synack_received)
 	NET_ASSERT(net_pkt_iface(pkt));
 
 	if (NET_TCP_FLAGS(pkt) & NET_TCP_RST) {
+		/* We only accept RST packet that has valid seq field. */
+		if (!net_tcp_validate_seq(context->tcp, pkt)) {
+			net_stats_update_tcp_seg_rsterr();
+			return NET_DROP;
+		}
+
+		net_stats_update_tcp_seg_rst();
+
 		if (context->connect_cb) {
 			context->connect_cb(context, -ECONNREFUSED,
 					    context->user_data);
@@ -968,7 +1029,7 @@ NET_CONN_CB(tcp_synack_received)
 		net_tcp_change_state(context->tcp, NET_TCP_ESTABLISHED);
 		net_context_set_state(context, NET_CONTEXT_CONNECTED);
 
-		send_ack(context, raddr);
+		send_ack(context, raddr, false);
 
 		k_sem_give(&context->tcp->connect_wait);
 
@@ -1172,8 +1233,6 @@ int net_context_connect(struct net_context *context,
 
 #if defined(CONFIG_NET_TCP)
 
-#define ACK_TIMEOUT MSEC_PER_SEC
-
 static void ack_timer_cancel(struct net_tcp *tcp)
 {
 	tcp->ack_timer_cancelled = true;
@@ -1189,11 +1248,23 @@ static void ack_timeout(struct k_work *work)
 		return;
 	}
 
-	NET_DBG("Did not receive ACK in %dms", ACK_TIMEOUT);
+	NET_DBG("Did not receive ACK in %dms while in %s", ACK_TIMEOUT,
+		net_tcp_state_str(net_tcp_get_state(tcp)));
 
-	send_reset(tcp->context, &tcp->context->remote);
+	if (net_tcp_get_state(tcp) == NET_TCP_LAST_ACK) {
+		/* We did not receive the last ACK on time. We can only
+		 * close the connection at this point. We will not send
+		 * anything to peer in this last state, but will go directly
+		 * to to CLOSED state.
+		 */
+		net_tcp_change_state(tcp, NET_TCP_CLOSED);
 
-	net_tcp_change_state(tcp, NET_TCP_LISTEN);
+		net_context_unref(tcp->context);
+	} else {
+		send_reset(tcp->context, &tcp->context->remote);
+
+		net_tcp_change_state(tcp, NET_TCP_LISTEN);
+	}
 }
 
 static void pkt_get_sockaddr(sa_family_t family, struct net_pkt *pkt,
@@ -1303,14 +1374,27 @@ NET_CONN_CB(tcp_syn_rcvd)
 	}
 
 	/*
-	 * If we receive RST, we go back to LISTEN state.
+	 * If we receive RST, we go back to LISTEN state if the previous state
+	 * was LISTEN, otherwise we go to CLOSED state.
+	 * See RFC 793 chapter 3.4 "Reset Processing" for more details.
 	 */
 	if (NET_TCP_FLAGS(pkt) == NET_TCP_RST) {
+
+		/* We only accept RST packet that has valid seq field. */
+		if (!net_tcp_validate_seq(tcp, pkt)) {
+			net_stats_update_tcp_seg_rsterr();
+			return NET_DROP;
+		}
+
+		net_stats_update_tcp_seg_rst();
+
 		ack_timer_cancel(tcp);
 
 		net_tcp_print_recv_info("RST", pkt, NET_TCP_HDR(pkt)->src_port);
 
-		net_tcp_change_state(tcp, NET_TCP_LISTEN);
+		if (net_tcp_get_state(tcp) != NET_TCP_LISTEN) {
+			net_tcp_change_state(tcp, NET_TCP_CLOSED);
+		}
 
 		return NET_DROP;
 	}
@@ -1350,7 +1434,7 @@ NET_CONN_CB(tcp_syn_rcvd)
 		if (ret < 0) {
 			NET_DBG("Cannot get accepted context, "
 				"connection reset");
-			goto reset;
+			goto conndrop;
 		}
 
 		new_context->tcp->recv_max_ack = context->tcp->recv_max_ack;
@@ -1411,7 +1495,7 @@ NET_CONN_CB(tcp_syn_rcvd)
 			NET_DBG("Cannot bind accepted context, "
 				"connection reset");
 			net_context_unref(new_context);
-			goto reset;
+			goto conndrop;
 		}
 
 		new_context->flags |= NET_CONTEXT_REMOTE_ADDR_SET;
@@ -1430,7 +1514,7 @@ NET_CONN_CB(tcp_syn_rcvd)
 			NET_DBG("Cannot register accepted TCP handler (%d)",
 				ret);
 			net_context_unref(new_context);
-			goto reset;
+			goto conndrop;
 		}
 
 		/* Swap the newly-created TCP states with the one that
@@ -1462,6 +1546,9 @@ NET_CONN_CB(tcp_syn_rcvd)
 	}
 
 	return NET_DROP;
+
+conndrop:
+	net_stats_update_tcp_seg_conndrop();
 
 reset:
 	{
@@ -1880,6 +1967,8 @@ static enum net_verdict packet_received(struct net_conn *conn,
 	NET_DBG("Set appdata %p to len %u (total %zu)",
 		net_pkt_appdata(pkt), net_pkt_appdatalen(pkt),
 		net_pkt_get_len(pkt));
+
+	net_stats_update_tcp_recv(net_pkt_appdatalen(pkt));
 
 	context->recv_cb(context, pkt, 0, user_data);
 
