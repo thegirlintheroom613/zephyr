@@ -21,11 +21,10 @@
 #include <net/buf.h>
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/l2cap.h>
-#include <bluetooth/log.h>
 #include <bluetooth/hci.h>
 #include <bluetooth/buf.h>
 #include <bluetooth/hci_raw.h>
-
+#include <bluetooth/common/log.h>
 
 #define HCI_CMD			0x01
 #define HCI_ACL			0x02
