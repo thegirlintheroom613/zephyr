@@ -2,18 +2,7 @@
 /*
  * Copyright (c) 2016, 2017 Linaro Limited.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define SYS_LOG_LEVEL CONFIG_SYS_LOG_SPI_LEVEL
@@ -33,18 +22,18 @@
 typedef void (*spis_nrf5_config_t)(void);
 
 struct spis_nrf5_config {
-	NRF_SPIS_Type *regs;			/* Registers */
-	spis_nrf5_config_t config_func;	/* IRQ config func pointer */
-	u8_t sck_pin;			/* SCK GPIO pin number */
-	u8_t mosi_pin;			/* MOSI GPIO pin number */
-	u8_t miso_pin;			/* MISO GPIO pin number */
-	u8_t csn_pin;			/* CSN GPIO pin number */
-	u8_t def;				/* Default character */
+	NRF_SPIS_Type *regs;                    /* Registers */
+	spis_nrf5_config_t config_func;         /* IRQ config func pointer */
+	u8_t sck_pin;                           /* SCK GPIO pin number */
+	u8_t mosi_pin;                          /* MOSI GPIO pin number */
+	u8_t miso_pin;                          /* MISO GPIO pin number */
+	u8_t csn_pin;                           /* CSN GPIO pin number */
+	u8_t def;                               /* Default character */
 };
 
 struct spis_nrf5_data {
 	u8_t error;
-	struct k_sem device_sync_sem;	/* synchronisation semaphore */
+	struct k_sem device_sync_sem;           /* synchronisation semaphore */
 };
 
 #define DEV_CFG(dev)	\
@@ -77,11 +66,11 @@ struct spis_nrf5_data {
 #define NRF5_SPIS_ENABLED \
 	(SPIS_ENABLE_ENABLE_Enabled << SPIS_ENABLE_ENABLE_Pos)
 
-#define NRF5_SPIS_CSN_DISABLED_CFG 0xff	/* CS disabled value from Kconfig */
+#define NRF5_SPIS_CSN_DISABLED_CFG 0xff   /* CS disabled value from Kconfig */
 #if defined(CONFIG_SOC_SERIES_NRF51X)
-#define NRF5_SPIS_CSN_DISABLED (~0U)		/* CS disabled register value */
+#define NRF5_SPIS_CSN_DISABLED (~0U)      /* CS disabled register value */
 #elif defined(CONFIG_SOC_SERIES_NRF52X)
-#define NRF5_SPIS_CSN_DISABLED (1U << 31)	/* CS disabled register value */
+#define NRF5_SPIS_CSN_DISABLED (1U << 31) /* CS disabled register value */
 #endif
 
 static inline bool is_buf_in_ram(const void *buf)
@@ -92,9 +81,9 @@ static inline bool is_buf_in_ram(const void *buf)
 static void spis_nrf5_print_cfg_registers(struct device *dev)
 {
 	__unused NRF_SPIS_Type *regs = SPI_REGS(dev);
-	__unused u32_t sck, miso, mosi, csn,
-				rxd_ptr, rxd_max, rxd_amount,
-				txd_ptr, txd_max, txd_amount;
+	__unused u32_t sck, miso, mosi, csn;
+	__unused u32_t rxd_ptr, rxd_max, rxd_amount;
+	__unused u32_t txd_ptr, txd_max, txd_amount;
 
 #if defined(CONFIG_SOC_SERIES_NRF51X)
 	sck = regs->PSELSCK;
@@ -237,7 +226,7 @@ static int spis_nrf5_transceive(struct device *dev, const void *tx_buf,
 #endif
 		spi_regs->TASKS_RELEASE = 1;
 	} else {
-		SYS_LOG_ERR("SEM not allocated to the CPU, transfer still in progress?");
+		SYS_LOG_ERR("Can't get SEM; unfinished transfer?");
 		return -EIO;
 	}
 

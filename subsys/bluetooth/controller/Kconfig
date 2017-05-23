@@ -30,15 +30,6 @@ endchoice
 
 comment "BLE Controller configuration"
 
-config BLUETOOTH_CONTROLLER_TO_HOST_UART_DEV_NAME
-	string "Device Name of UART Device to an external Bluetooth Host"
-	default "UART_0"
-	depends on BLUETOOTH_HCI_RAW
-	help
-	  This option specifies the name of UART device to be used
-	  to connect to an external Bluetooth Host when Zephyr is
-	  acting as a Bluetooth Controller.
-
 menu "Advertiser"
 	visible if !BLUETOOTH_PERIPHERAL
 
@@ -76,19 +67,23 @@ config BLUETOOTH_CONTROLLER_RX_BUFFERS
 	int
 	default 1
 	default 6 if BLUETOOTH_HCI_RAW
-	range 1 10
+	range 1 18
 	help
-	  Set the number of Rx PDUs to be buffered in the controller.
+	  Set the number of Rx PDUs to be buffered in the controller. In a 7.5ms
+	  connection interval and 2M PHY, maximum 18 packets with L2CAP payload
+	  size of 1 byte can be received.
 
 config BLUETOOTH_CONTROLLER_TX_BUFFERS
 	prompt "Number of Tx buffers"
 	int
 	default 2
 	default 7 if BLUETOOTH_HCI_RAW
-	range 1 10
+	range 1 19
 	help
-	  Set the number of Tx PDUs to be queued for transmission
-	  in the controller.
+	  Set the number of Tx PDUs to be queued for transmission in the
+	  controller. In a 7.5ms connection interval and 2M PHY, maximum 19
+	  packets can be enqueued, with 18 packets with L2CAP payload size of 1
+	  byte can be acknowledged.
 
 config BLUETOOTH_CONTROLLER_TX_BUFFER_SIZE
 	prompt "Tx buffer size"
@@ -147,6 +142,13 @@ config BLUETOOTH_CONTROLLER_DATA_LENGTH_MAX
 	help
 	  Set the maximum data length of PDU supported in the Controller.
 
+config BLUETOOTH_CONTROLLER_PHY
+	bool "PHY Update"
+	default y
+	help
+	  Enable support for Bluetooth 5.0 PHY Update Procedure in the
+	  Controller.
+
 config BLUETOOTH_CONTROLLER_CHAN_SEL_2
 	bool "Channel Selection Algorithm #2"
 	default y
@@ -161,6 +163,32 @@ config BLUETOOTH_CONTROLLER_ADVANCED_FEATURES
 
 menu "Advanced features"
 	visible if BLUETOOTH_CONTROLLER_ADVANCED_FEATURES
+
+if BLUETOOTH_CONTROLLER_PHY
+
+config BLUETOOTH_CONTROLLER_PHY_2M
+	bool "2Mbps PHY Support"
+	depends on !SOC_SERIES_NRF51X || BLUETOOTH_CONTROLLER_PHY_2M_NRF
+	default y
+	help
+	  Enable support for Bluetooth 5.0 2Mbps PHY in the Controller.
+
+config BLUETOOTH_CONTROLLER_PHY_2M_NRF
+	bool "2Mbps Nordic Semiconductor PHY Support (Open Text)"
+	depends on SOC_SERIES_NRF51X
+	select BLUETOOTH_CONTROLLER_PHY_2M
+	help
+	  Enable support for Nordic Semiconductor proprietary 2Mbps PHY in the
+	  Controller. Encrypted connections are not supported.
+
+config BLUETOOTH_CONTROLLER_PHY_CODED
+	bool "Coded PHY Support"
+	depends on SOC_NRF52840
+	default y
+	help
+	  Enable support for Bluetooth 5.0 Coded PHY in the Controller.
+
+endif # BLUETOOTH_CONTROLLER_PHY
 
 config BLUETOOTH_CONTROLLER_WORKER_PRIO
 	prompt "Radio and Ticker's Worker IRQ priority"

@@ -47,13 +47,24 @@ GDATA(_kernel)
 
 SECTION_FUNC(TEXT, __pendsv)
 
+#if defined (CONFIG_KERNEL_EVENT_LOGGER_CONTEXT_SWITCH) || \
+		defined(CONFIG_STACK_SENTINEL)
+    /* Register the context switch */
+    push {lr}
+
 #ifdef CONFIG_KERNEL_EVENT_LOGGER_CONTEXT_SWITCH
-	/* Register the context switch */
-	push {lr}
-	bl _sys_k_event_logger_context_switch
-	pop {r0}
-	mov lr, r0
+    bl _sys_k_event_logger_context_switch
 #endif
+#ifdef CONFIG_STACK_SENTINEL
+    bl _check_stack_sentinel
+#endif
+#if defined(CONFIG_ARMV6_M)
+    pop {r0}
+    mov lr, r0
+#else
+    pop {lr}
+#endif /* CONFIG_ARMV6_M */
+#endif /* CONFIG_KERNEL_EVENT_LOGGER_CONTEXT_SWITCH || CONFIG_STACK_SENTINEL */
 
     /* load _kernel into r1 and current k_thread into r2 */
     ldr r1, =_kernel
@@ -167,6 +178,14 @@ _thread_irq_disabled:
     add r0, r2, #_thread_offset_to_preempt_float
     vldmia r0, {s16-s31}
 #endif
+
+#ifdef CONFIG_MPU_STACK_GUARD
+    /* r2 contains k_thread */
+    add r0, r2, #0
+    push {r2, lr}
+    blx configure_mpu_stack_guard
+    pop {r2, lr}
+#endif /* CONFIG_MPU_STACK_GUARD */
 
     /* load callee-saved + psp from thread */
     add r0, r2, #_thread_offset_to_callee_saved

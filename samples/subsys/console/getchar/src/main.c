@@ -4,7 +4,7 @@
 
 void main(void)
 {
-	console_getchar_init();
+	console_init();
 
 	while (1) {
 		u8_t c = console_getchar();

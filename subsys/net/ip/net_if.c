@@ -44,6 +44,7 @@ static sys_slist_t link_callbacks;
 
 NET_STACK_DEFINE(TX, tx_stack, CONFIG_NET_TX_STACK_SIZE,
 		 CONFIG_NET_TX_STACK_SIZE);
+static struct k_thread tx_thread_data;
 
 #if defined(CONFIG_NET_DEBUG_IF)
 #define debug_check_packet(pkt)						    \
@@ -69,8 +70,15 @@ static inline void net_context_send_cb(struct net_context *context,
 #if defined(CONFIG_NET_UDP)
 	if (net_context_get_ip_proto(context) == IPPROTO_UDP) {
 		net_stats_update_udp_sent();
-	}
+	} else
 #endif
+#if defined(CONFIG_NET_TCP)
+	if (net_context_get_ip_proto(context) == IPPROTO_TCP) {
+		net_stats_update_tcp_seg_sent();
+	} else
+#endif
+	{
+	}
 }
 
 static bool net_if_tx(struct net_if *iface)
@@ -320,6 +328,10 @@ struct net_if *net_if_lookup_by_dev(struct device *dev)
 
 struct net_if *net_if_get_default(void)
 {
+	if (__net_if_start == __net_if_end) {
+		return NULL;
+	}
+
 	return __net_if_start;
 }
 
@@ -1678,10 +1690,10 @@ void net_if_init(struct k_sem *startup_sync)
 		return;
 	}
 
-	k_thread_spawn(tx_stack, sizeof(tx_stack),
-		       (k_thread_entry_t)net_if_tx_thread,
-		       startup_sync, NULL, NULL, K_PRIO_COOP(7),
-		       K_ESSENTIAL, K_NO_WAIT);
+	k_thread_create(&tx_thread_data, tx_stack, sizeof(tx_stack),
+			(k_thread_entry_t)net_if_tx_thread,
+			startup_sync, NULL, NULL, K_PRIO_COOP(7),
+			K_ESSENTIAL, K_NO_WAIT);
 }
 
 void net_if_post_init(void)
